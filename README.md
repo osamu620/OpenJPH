@@ -18,7 +18,7 @@ The provided command line tools ojph\_compress and ojph\_expand accepts and gene
 
 The associate site [openjph.org](https://openjph.org) serves as a blog.  It currently host the [javascript](https://openjph.org/javascript/demo.html) demo of the decoder; the webpage demonstrates that the library can be compiled to javascript, and can run inside a web-browser.  Any browser supporting webassembly can be used to view this webpage; examples include Firefox, Chrome, Safari, and Edge, on a desktop, mobile, or tablet.
 
-Another project of interest is the [openjphjs](https://github.com/chafey/openjphjs) project, developed by [Chris](https://github.com/chafey).  You can see [there](https://chafey.github.com/openjphjs/test/browser/index.html) a nice online demonstration of javascript-based HTJ2K encoding/decoding, with a wealth of features and user-selectable options.
+Another project of interest is the [openjphjs](https://github.com/chafey/openjphjs) project, developed by [Chris](https://github.com/chafey).  You can see [there](https://chafey.github.io/openjphjs/test/browser/index.html) a nice online demonstration of javascript-based HTJ2K encoding/decoding, with a wealth of features and user-selectable options.
 
 # Compiling #
 
@@ -63,8 +63,8 @@ before compilation.  Alternatively, if you are a docker user, the you can launch
 The javascript decoder can be compiled using
 
     cd subprojects/js/build
-    emmake cmake ..
-    make
+    emcmake cmake ..
+    emmake make
 
 The compilation creates libopenjph.js and libopenjph.wasm in subprojects/js/html folder.  That html folder also has the demo webpage index.html and a compressed image test.j2c which the script in index.html decodes.  To run the demo webpage on your machine, you need a webserver running on the machine -- Due to security reasons, javascript engines running in a browser cannot access local files on the machine.  You can use the ```emrun``` command, provided with the emscripten
 tools, by issuing the command
@@ -74,9 +74,9 @@ tools, by issuing the command
 from inside the html folder; the default port is 6931.
 Alternatively, a simple python webserver can be run using
 
-    python -m SimpleHTTPServer 8000
+    python -m http.server 8000
   
-also from inside the html folder.  Here, 8000 is the port number at which the webserver will be listening.  The webpage can then be accessed by open 127.0.0.1:8000 in you browser.   Any browser supporting webassembly can be used to view this webpage; examples include Firefox, Chrome, Safari, and Edge, on a desktop, mobile, or tablet.
+also from inside the html folder.  Here, 8000 is the port number at which the webserver will be listening.  The webpage can then be accessed by open localhost:8000 in you browser.   Any browser supporting webassembly can be used to view this webpage; examples include Firefox, Chrome, Safari, and Edge, on a desktop, mobile, or tablet.
 
 # Visual Studio Code Remote Containers #
 
@@ -130,4 +130,5 @@ Here are some usage examples:
 
 # The standard #
 
-The standard is available for purchase from the [ISO website](https://www.iso.org/standard/76621.html).  Users with TIES account can purchase it from the [ITU website](https://www.itu.int/rec/T-REC-T.814/en). 
+The standard is available free of charge from [ITU website](https://www.itu.int/rec/T-REC-T.814/en). It can also be purchased from the [ISO website](https://www.iso.org/standard/76621.html). 
+

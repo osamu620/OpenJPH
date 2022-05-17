@@ -100,29 +100,46 @@ file(GLOB SSE_SOURCES "src/core/transform/*_sse.cpp")
 file(GLOB SSE2_SOURCES "src/core/transform/*_sse2.cpp")
 file(GLOB AVX_SOURCES "src/core/transform/*_avx.cpp")
 file(GLOB AVX2_SOURCES "src/core/transform/*_avx2.cpp")
+file(GLOB WASM_SIMD_SOURCES  "src/core/transform/*_wasm.cpp")
 
 CONFIGURE_FILE(
   "${CMAKE_CURRENT_SOURCE_DIR}/src/pkg-config.pc.cmake"
   "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${PROJECT_NAME}.pc"
 )
 
-if (OJPH_DISABLE_INTEL_SIMD)
-    add_library(openjph ${SOURCES})
+if(EMSCRIPTEN)
+  set(OJPH_DISABLE_INTEL_SIMD ON)
+  set(BUILD_SHARED_LIBS OFF)
+  set(OJPH_ENABLE_TIFF_SUPPORT OFF)
+  add_compile_options(-std=c++11 -O3 -fexceptions -DOJPH_DISABLE_INTEL_SIMD)
+  add_library(openjph ${SOURCES})
+  add_library(openjphsimd ${SOURCES} ${WASM_SIMD_SOURCES})
+  target_include_directories(openjph PUBLIC src/core/common)
+  target_include_directories(openjphsimd PUBLIC src/core/common)
+  target_compile_options(openjphsimd PRIVATE -DOJPH_ENABLE_WASM_SIMD -msimd128)
+elseif(NOT OJPH_DISABLE_INTEL_SIMD)
+  add_library(openjph ${SOURCES} ${SSE_SOURCES} ${SSE2_SOURCES} ${AVX_SOURCES} ${AVX2_SOURCES})
 else()
-    add_library(openjph ${SOURCES} ${SSE_SOURCES} ${SSE2_SOURCES} ${AVX_SOURCES} ${AVX2_SOURCES})
+  add_library(openjph ${SOURCES})
 endif()
 
 target_include_directories(openjph PUBLIC src/core/common)
 
-set_target_properties(openjph
-  PROPERTIES
-    OUTPUT_NAME "openjph.${OPENJPH_VERSION_MAJOR}.${OPENJPH_VERSION_MINOR}.${OPENJPH_VERSION_PATCH}"
-)
+target_compile_definitions(openjph PUBLIC _FILE_OFFSET_BITS=64)
 
-if (OPENJPH_VERSION AND CMAKE_SYSTEM_NAME MATCHES "Linux")
-  set_target_properties(openjph
-    PROPERTIES
-      SOVERSION "${OPENJPH_VERSION_MAJOR}.${OPENJPH_VERSION_MINOR}")
+if (OPENJPH_VERSION)
+  if (WIN32)
+    set_target_properties(openjph
+      PROPERTIES
+        OUTPUT_NAME "openjph.${OPENJPH_VERSION_MAJOR}.${OPENJPH_VERSION_MINOR}")
+  else()
+    set_target_properties(openjph
+      PROPERTIES
+        SOVERSION "${OPENJPH_VERSION_MAJOR}.${OPENJPH_VERSION_MINOR}"
+        VERSION "${OPENJPH_VERSION}")
+  endif()
+else()
+  message(FATAL_ERROR "OPENJPH_VERSION is not set")
 endif()
 
 if (MSVC)
@@ -157,8 +174,9 @@ INSTALL(TARGETS ojph_expand
 INSTALL(TARGETS ojph_compress
 	DESTINATION bin)
 
+include(GNUInstallDirs)
 INSTALL(TARGETS openjph LIBRARY
-        DESTINATION lib)
+        DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 INSTALL (DIRECTORY src/core/common/
   DESTINATION include/openjph
@@ -166,7 +184,7 @@ INSTALL (DIRECTORY src/core/common/
   PATTERN "*.h")
 
 INSTALL(FILES "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${PROJECT_NAME}.pc"
-        DESTINATION lib/pkgconfig)
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 ################################################################################################
 # Testing

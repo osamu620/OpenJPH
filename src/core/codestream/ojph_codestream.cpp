@@ -4031,7 +4031,7 @@ namespace ojph {
       if (coded_cb->pass_length[0] > 0 && coded_cb->num_passes > 0 &&
           coded_cb->next_coded != NULL)
       {
-        bool result = 
+        bool result =
           ojph::local::ojph_decode_codeblock(
             coded_cb->next_coded->buf + coded_cb_header::prefix_buf_size,
             buf, coded_cb->missing_msbs, coded_cb->num_passes,

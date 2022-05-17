@@ -157,13 +157,18 @@ namespace ojph {
   static int cpu_level;
   static bool cpu_level_initialized = init_cpu_ext_level(cpu_level);
   
+#elif defined(OJPH_ENABLE_WASM_SIMD) && defined(OJPH_EMSCRIPTEN)
+
+  static int cpu_level = 1;
+  static bool cpu_level_initialized = true;
+
 #else
 
   ////////////////////////////////////////////////////////////////////////////
   static int cpu_level = 0;
   static bool cpu_level_initialized = true;
 
-#endif // !OJPH_DISABLE_INTEL_SIMD
+#endif
 
 
   ////////////////////////////////////////////////////////////////////////////
