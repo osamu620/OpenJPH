@@ -1,10 +1,10 @@
-//***************************************************************************/
+/***************************************************************************/
 // This software is released under the 2-Clause BSD license, included
 // below.
 //
-// Copyright (c) 2019, Aous Naman 
-// Copyright (c) 2019, Kakadu Software Pty Ltd, Australia
-// Copyright (c) 2019, The University of New South Wales, Australia
+// Copyright (c) 2022, Aous Naman 
+// Copyright (c) 2022, Kakadu Software Pty Ltd, Australia
+// Copyright (c) 2022, The University of New South Wales, Australia
 // 
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -30,9 +30,20 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //***************************************************************************/
 // This file is part of the OpenJPH software implementation.
-// File: ojph_base.h
+// File: ojph_block_common.h
+// Author: Aous Naman
+// Date: 13 May 2022
 //***************************************************************************/
 
-#define OPENJPH_VERSION_MAJOR 0
-#define OPENJPH_VERSION_MINOR 9
-#define OPENJPH_VERSION_PATCH 0
+#include "ojph_defs.h"
+
+namespace ojph{
+  namespace local {
+    
+    extern ui16 vlc_tbl0[1024];
+    extern ui16 vlc_tbl1[1024];
+    extern ui16 uvlc_tbl0[256+64];
+    extern ui16 uvlc_tbl1[256];
+
+  } // !namespace local
+} // !namespace ojph

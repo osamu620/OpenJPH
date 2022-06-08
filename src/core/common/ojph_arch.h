@@ -65,10 +65,46 @@
 
 namespace ojph {
 
+  ////////////////////////////////////////////////////////////////////////////
+  //                         OS detection definitions
+  ////////////////////////////////////////////////////////////////////////////
+#if (defined WIN32) || (defined _WIN32) || (defined _WIN64)
+#define OJPH_OS_WINDOWS
+#elif (defined __APPLE__)
+#define OJPH_OS_APPLE
+#elif (defined __linux)
+#define OJPH_OS_LINUX
+#endif
+
+  /////////////////////////////////////////////////////////////////////////////
+  // defines for dll
+  /////////////////////////////////////////////////////////////////////////////
+#if defined(OJPH_OS_WINDOWS) && defined(OJPH_BUILD_SHARED_LIBRARY)
+#define OJPH_EXPORT __declspec(dllexport)
+#else
+#define OJPH_EXPORT
+#endif
+
   /////////////////////////////////////////////////////////////////////////////
   //                             cpu features
   /////////////////////////////////////////////////////////////////////////////
-  int cpu_ext_level();
+  OJPH_EXPORT
+  int get_cpu_ext_level();
+
+  enum : int {
+    X86_CPU_EXT_LEVEL_GENERIC = 0,
+    X86_CPU_EXT_LEVEL_MMX = 1,
+    X86_CPU_EXT_LEVEL_SSE = 2,
+    X86_CPU_EXT_LEVEL_SSE2 = 3,
+    X86_CPU_EXT_LEVEL_SSE3 = 4,
+    X86_CPU_EXT_LEVEL_SSSE3 = 5,
+    X86_CPU_EXT_LEVEL_SSE41 = 6,
+    X86_CPU_EXT_LEVEL_SSE42 = 7,
+    X86_CPU_EXT_LEVEL_AVX = 8,
+    X86_CPU_EXT_LEVEL_AVX2 = 9,
+    X86_CPU_EXT_LEVEL_AVX2FMA = 10,
+    X86_CPU_EXT_LEVEL_AVX512 = 11,
+  };
 
   /////////////////////////////////////////////////////////////////////////////
   static inline ui32 population_count(ui32 val)
@@ -159,7 +195,7 @@ namespace ojph {
   // constants
   ////////////////////////////////////////////////////////////////////////////
   const ui32 byte_alignment = 32; //32 bytes == 256 bits
-  const ui32  log_byte_alignment = 31 - count_leading_zeros(byte_alignment);
+  const ui32 log_byte_alignment = 31 - count_leading_zeros(byte_alignment);
   const ui32 object_alignment = 8;
 
   ////////////////////////////////////////////////////////////////////////////
@@ -185,26 +221,6 @@ namespace ojph {
     p &= ~((1ULL << (31 - count_leading_zeros(N))) - 1);
     return reinterpret_cast<T *>(p);
   }
-
-  ////////////////////////////////////////////////////////////////////////////
-  //                         OS detection definitions
-  ////////////////////////////////////////////////////////////////////////////
-#if (defined WIN32) || (defined _WIN32) || (defined _WIN64)
-  #define OJPH_OS_WINDOWS
-#elif (defined __APPLE__)
-  #define OJPH_OS_APPLE
-#elif (defined __linux)
-  #define OJPH_OS_LINUX
-#endif
-
-  /////////////////////////////////////////////////////////////////////////////
-  // defines for dll
-  /////////////////////////////////////////////////////////////////////////////
-#ifdef OJPH_OS_WINDOWS
-  #define OJPH_EXPORT __declspec(dllexport)
-#else
-  #define OJPH_EXPORT
-#endif
 
 }
 

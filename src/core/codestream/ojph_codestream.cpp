@@ -198,7 +198,7 @@ namespace ojph {
     : precinct_scratch(NULL), allocator(NULL), elastic_alloc(NULL)
     {
       tiles = NULL;
-      line = NULL;
+      lines = NULL;
       comp_size = NULL;
       recon_comp_size = NULL;
       allocator = NULL;
@@ -295,15 +295,12 @@ namespace ojph {
       //allocate lines
       //These lines are used by codestream to exchange data with external
       // world
-      allocator->pre_alloc_obj<line_buf>(1);
       ui32 num_comps = sz.get_num_components();
+      allocator->pre_alloc_obj<line_buf>(num_comps);
       allocator->pre_alloc_obj<size>(num_comps); //for *comp_size
       allocator->pre_alloc_obj<size>(num_comps); //for *recon_comp_size
-      ui32 width = 0;
       for (ui32 i = 0; i < num_comps; ++i)
-        width = ojph_max(width, siz.get_recon_width(i));
-
-      allocator->pre_alloc_data<si32>(width, 0);
+        allocator->pre_alloc_data<si32>(siz.get_recon_width(i), 0);
 
       //allocate tlm
       if (outfile != NULL)
@@ -407,23 +404,20 @@ namespace ojph {
       //allocate lines
       //These lines are used by codestream to exchange data with external
       // world
-      line = allocator->post_alloc_obj<line_buf>(1);
-      num_comps = sz.get_num_components();
+      this->num_comps = sz.get_num_components();
+      lines = allocator->post_alloc_obj<line_buf>(this->num_comps);
       comp_size = allocator->post_alloc_obj<size>(this->num_comps);
       recon_comp_size = allocator->post_alloc_obj<size>(this->num_comps);
       employ_color_transform = cod.is_employing_color_transform();
-      ui32 width = 0;
-      for (ui32 i = 0; i < num_comps; ++i)
+      for (ui32 i = 0; i < this->num_comps; ++i)
       {
         comp_size[i].w = siz.get_width(i);
         comp_size[i].h = siz.get_height(i);
         ui32 cw = siz.get_recon_width(i);
         recon_comp_size[i].w = cw;
         recon_comp_size[i].h = siz.get_recon_height(i);
-        width = ojph_max(width, cw);
+        lines[i].wrap(allocator->post_alloc_data<si32>(cw, 0), cw, 0);        
       }
-
-      line->wrap(allocator->post_alloc_data<si32>(width, 0), width, 0);
 
       cur_comp = 0;
       cur_line = 0;
@@ -433,7 +427,7 @@ namespace ojph {
       {
         if (profile == OJPH_PN_IMF || profile == OJPH_PN_BROADCAST)
         {
-          ui32 num_pairs = (ui32)num_tiles.area() * num_comps;
+          ui32 num_pairs = (ui32)num_tiles.area() * this->num_comps;
           tlm.init(num_pairs,
             allocator->post_alloc_obj<param_tlm::Ttlm_Ptlm_pair>(num_pairs));
         }
@@ -1203,7 +1197,7 @@ namespace ojph {
       }
 
       next_component = cur_comp;
-      return this->line;
+      return this->lines + cur_comp;
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -1216,7 +1210,7 @@ namespace ojph {
         for (ui32 i = 0; i < num_tiles.w; ++i)
         {
           ui32 idx = i + cur_tile_row * num_tiles.w;
-          if ((success &= tiles[idx].pull(line, cur_comp)) == false)
+          if ((success &= tiles[idx].pull(lines + cur_comp, cur_comp)) == false)
             break;
         }
         cur_tile_row += success == false ? 1 : 0;
@@ -1251,7 +1245,7 @@ namespace ojph {
         }
       }
 
-      return line;
+      return lines + comp_num;
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -2269,7 +2263,9 @@ namespace ojph {
         num_precincts.h = (try1 + (1<<log_PP.h) - 1) >> log_PP.h;
         num_precincts.h -= try0 >> log_PP.h;
         precincts = allocator->post_alloc_obj<precinct>(num_precincts.area());
-        memset(precincts, 0, sizeof(precinct) * num_precincts.area());
+        ui64 num = num_precincts.area();
+        for (ui64 i = 0; i < num; ++i)
+          precincts[i] = precinct();
       }
       // precincts will be initialized in full shortly
 
@@ -3611,6 +3607,10 @@ namespace ojph {
     {
       mem_fixed_allocator* allocator = codestream->get_allocator();
 
+      bool empty = ((band_rect.siz.w == 0) || (band_rect.siz.h == 0));
+      if (empty)
+        return;
+
       const param_cod* cdp = codestream->get_cod();
       size log_cb = cdp->get_log_block_dims();
       size log_PP = cdp->get_log_precinct_size(res_num);
@@ -3626,29 +3626,23 @@ namespace ojph {
       ui32 tby1 = band_rect.org.y + band_rect.siz.h;
 
       size num_blocks;
-      if (tbx0 != tbx1 && tby0 != tby1)
-      {
-        num_blocks.w = (tbx1 + (1 << xcb_prime) - 1) >> xcb_prime;
-        num_blocks.w -= tbx0 >> xcb_prime;
-        num_blocks.h = (tby1 + (1 << ycb_prime) - 1) >> ycb_prime;
-        num_blocks.h -= tby0 >> ycb_prime;
-      }
+      num_blocks.w = (tbx1 + (1 << xcb_prime) - 1) >> xcb_prime;
+      num_blocks.w -= tbx0 >> xcb_prime;
+      num_blocks.h = (tby1 + (1 << ycb_prime) - 1) >> ycb_prime;
+      num_blocks.h -= tby0 >> ycb_prime;
 
-      if (num_blocks.area())
-      {
-        allocator->pre_alloc_obj<codeblock>(num_blocks.w);
-        //allocate codeblock headers
-        allocator->pre_alloc_obj<coded_cb_header>(num_blocks.area());
+      allocator->pre_alloc_obj<codeblock>(num_blocks.w);
+      //allocate codeblock headers
+      allocator->pre_alloc_obj<coded_cb_header>(num_blocks.area());
 
-        for (ui32 i = 0; i < num_blocks.w; ++i)
-          codeblock::pre_alloc(codestream, nominal);
+      for (ui32 i = 0; i < num_blocks.w; ++i)
+        codeblock::pre_alloc(codestream, nominal);
 
-        //allocate lines
-        allocator->pre_alloc_obj<line_buf>(1);
-        //allocate line_buf
-        ui32 width = band_rect.siz.w + 1;
-        allocator->pre_alloc_data<si32>(width, 1);
-      }
+      //allocate lines
+      allocator->pre_alloc_obj<line_buf>(1);
+      //allocate line_buf
+      ui32 width = band_rect.siz.w + 1;
+      allocator->pre_alloc_data<si32>(width, 1);
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -3688,60 +3682,58 @@ namespace ojph {
         delta_inv = (1.0f/d);
       }
 
+      this->empty = ((band_rect.siz.w == 0) || (band_rect.siz.h == 0));
+      if (this->empty)
+        return;
+
       ui32 tbx0 = band_rect.org.x;
       ui32 tby0 = band_rect.org.y;
       ui32 tbx1 = band_rect.org.x + band_rect.siz.w;
       ui32 tby1 = band_rect.org.y + band_rect.siz.h;
 
       num_blocks = size();
-      if (tbx0 != tbx1 && tby0 != tby1)
+      num_blocks.w = (tbx1 + (1 << xcb_prime) - 1) >> xcb_prime;
+      num_blocks.w -= tbx0 >> xcb_prime;
+      num_blocks.h = (tby1 + (1 << ycb_prime) - 1) >> ycb_prime;
+      num_blocks.h -= tby0 >> ycb_prime;
+
+      blocks = allocator->post_alloc_obj<codeblock>(num_blocks.w);
+      //allocate codeblock headers
+      coded_cb_header *cp = coded_cbs =
+        allocator->post_alloc_obj<coded_cb_header>(num_blocks.area());
+      memset(coded_cbs, 0, sizeof(coded_cb_header) * num_blocks.area());
+      for (int i = (int)num_blocks.area(); i > 0; --i, ++cp)
+        cp->Kmax = K_max;
+
+      ui32 x_lower_bound = (tbx0 >> xcb_prime) << xcb_prime;
+      ui32 y_lower_bound = (tby0 >> ycb_prime) << ycb_prime;
+
+      size cb_size;
+      cb_size.h = ojph_min(tby1, y_lower_bound + nominal.h) - tby0;
+      cur_cb_height = (si32)cb_size.h;
+      int line_offset = 0;
+      for (ui32 i = 0; i < num_blocks.w; ++i)
       {
-        num_blocks.w = (tbx1 + (1 << xcb_prime) - 1) >> xcb_prime;
-        num_blocks.w -= tbx0 >> xcb_prime;
-        num_blocks.h = (tby1 + (1 << ycb_prime) - 1) >> ycb_prime;
-        num_blocks.h -= tby0 >> ycb_prime;
+        ui32 cbx0 = ojph_max(tbx0, x_lower_bound + i * nominal.w);
+        ui32 cbx1 = ojph_min(tbx1, x_lower_bound + (i + 1) * nominal.w);
+        cb_size.w = cbx1 - cbx0;
+        blocks[i].finalize_alloc(codestream, this, nominal, cb_size,
+                                  coded_cbs + i, K_max, line_offset);
+        line_offset += cb_size.w;
       }
 
-      if (num_blocks.area())
-      {
-        blocks = allocator->post_alloc_obj<codeblock>(num_blocks.w);
-        //allocate codeblock headers
-        coded_cb_header *cp = coded_cbs =
-          allocator->post_alloc_obj<coded_cb_header>(num_blocks.area());
-        memset(coded_cbs, 0, sizeof(coded_cb_header) * num_blocks.area());
-        for (int i = (int)num_blocks.area(); i > 0; --i, ++cp)
-          cp->Kmax = K_max;
-
-        ui32 x_lower_bound = (tbx0 >> xcb_prime) << xcb_prime;
-        ui32 y_lower_bound = (tby0 >> ycb_prime) << ycb_prime;
-
-        size cb_size;
-        cb_size.h = ojph_min(tby1, y_lower_bound + nominal.h) - tby0;
-        cur_cb_height = (si32)cb_size.h;
-        int line_offset = 0;
-        for (ui32 i = 0; i < num_blocks.w; ++i)
-        {
-          ui32 cbx0 = ojph_max(tbx0, x_lower_bound + i * nominal.w);
-          ui32 cbx1 = ojph_min(tbx1, x_lower_bound + (i + 1) * nominal.w);
-          cb_size.w = cbx1 - cbx0;
-          blocks[i].finalize_alloc(codestream, this, nominal, cb_size,
-                                   coded_cbs + i, K_max, line_offset);
-          line_offset += cb_size.w;
-        }
-
-        //allocate lines
-        lines = allocator->post_alloc_obj<line_buf>(1);
-        //allocate line_buf
-        ui32 width = band_rect.siz.w + 1;
-        lines->wrap(allocator->post_alloc_data<si32>(width,1),width,1);
-      }
+      //allocate lines
+      lines = allocator->post_alloc_obj<line_buf>(1);
+      //allocate line_buf
+      ui32 width = band_rect.siz.w + 1;
+      lines->wrap(allocator->post_alloc_data<si32>(width,1),width,1);
     }
 
     //////////////////////////////////////////////////////////////////////////
     void subband::get_cb_indices(const size& num_precincts,
                                  precinct *precincts)
     {
-      if (band_rect.siz.w == 0 || band_rect.siz.h == 0)
+      if (empty)
         return;
 
       rect res_rect = parent->get_rect();
@@ -3793,6 +3785,9 @@ namespace ojph {
     //////////////////////////////////////////////////////////////////////////
     void subband::exchange_buf(line_buf *l)
     {
+      if (empty)
+        return;
+
       assert(l->pre_size == lines[0].pre_size && l->size == lines[0].size);
       si32* t = lines[0].i32;
       lines[0].i32 = l->i32;
@@ -3802,31 +3797,8 @@ namespace ojph {
     //////////////////////////////////////////////////////////////////////////
     void subband::push_line()
     {
-      if (reversible)
-      {
-        ui32 shift = 31 - K_max;
-        //convert to sign and magnitude
-        si32 *sp = lines->i32;
-        for (ui32 i = band_rect.siz.w; i > 0; --i)
-        {
-          si32 val = *sp >= 0 ? *sp : -*sp;
-          si32 sign = *sp >= 0 ? 0 : (int)0x80000000;
-          *sp++ = sign | (val << shift);
-        }
-      }
-      else
-      {
-        //quantize and convert to sign and magnitude
-        const float *sp = lines->f32;
-        si32 *dp = lines->i32;
-        for (ui32 i = band_rect.siz.w; i > 0; --i)
-        {
-          si32 t = ojph_trunc(*sp++ * delta_inv);
-          si32 val = t >= 0 ? t : -t;
-          si32 sign = t >= 0 ? 0 : (int)0x80000000;
-          *dp++ = sign | val;
-        }
-      }
+      if (empty)
+        return;
 
       //push to codeblocks
       for (ui32 i = 0; i < num_blocks.w; ++i)
@@ -3869,7 +3841,7 @@ namespace ojph {
     //////////////////////////////////////////////////////////////////////////
     line_buf *subband::pull_line()
     {
-      if (band_rect.siz.w == 0 || band_rect.siz.h == 0)
+      if (empty)
         return lines;
 
       //pull from codeblocks
@@ -3910,29 +3882,6 @@ namespace ojph {
       for (ui32 i = 0; i < num_blocks.w; ++i)
         blocks[i].pull_line(lines + 0);
 
-      if (reversible)
-      {
-        ui32 shift = 31 - K_max;
-        //convert to sign and magnitude
-        si32 *sp = lines->i32;
-        for (ui32 i = band_rect.siz.w; i > 0; --i, ++sp)
-        {
-          si32 val = (*sp & 0x7FFFFFFF) >> shift;
-          *sp = ((ui32)*sp & 0x80000000) ? -val : val;
-        }
-      }
-      else
-      {
-        //quantize and convert to sign and magnitude
-        const si32 *sp = lines->i32;
-        float *dp = lines->f32;
-        for (ui32 i = band_rect.siz.w; i > 0; --i, ++sp)
-        {
-          float val = (float)(*sp & 0x7FFFFFFF) * delta;
-          *dp++ = ((ui32)*sp & 0x80000000) ? -val : val;
-        }
-      }
-
       return lines;
     }
 
@@ -3946,12 +3895,15 @@ namespace ojph {
     //////////////////////////////////////////////////////////////////////////
 
     //////////////////////////////////////////////////////////////////////////
+    codeblock::cb_decoder_fun codeblock::decode_cb = NULL;
+
+    //////////////////////////////////////////////////////////////////////////
     void codeblock::pre_alloc(codestream *codestream,
                               const size& nominal)
     {
       mem_fixed_allocator* allocator = codestream->get_allocator();
       
-      ui32 stride = (nominal.w + 3) & 0xFFFFFFFCU; // a multiple of 4
+      ui32 stride = (nominal.w + 7) & ~7U; // a multiple of 8
       allocator->pre_alloc_data<ui32>(nominal.h * stride, 0);
     }
 
@@ -3964,7 +3916,7 @@ namespace ojph {
     {
       mem_fixed_allocator* allocator = codestream->get_allocator();
 
-      this->stride = (nominal.w + 3) & 0xFFFFFFFC; // a multiple of 4
+      this->stride = (nominal.w + 7) & ~7U; // a multiple of 8
       this->buf_size = this->stride * nominal.h;
       this->buf = allocator->post_alloc_data<ui32>(this->buf_size, 0);
 
@@ -3973,36 +3925,104 @@ namespace ojph {
       this->parent = parent;
       this->line_offset = line_offset;
       this->cur_line = 0;
+      this->delta = parent->get_delta();
+      this->delta_inv = 1.0f / this->delta;
       this->K_max = K_max;
-      this->max_val = 0;
-      this->resilient = codestream->is_resilient();
+      for (int i = 0; i < 8; ++i)
+        this->max_val[i] = 0;
       ojph::param_cod cod = codestream->access_cod();
+      this->reversible = cod.is_reversible();
+      this->resilient = codestream->is_resilient();
       this->stripe_causal = cod.get_block_vertical_causality();
+      this->zero_block = false;
       this->coded_cb = coded_cb;
+
+#if !defined(OJPH_ENABLE_WASM_SIMD) || !defined(OJPH_EMSCRIPTEN)
+
+      decode_cb = ojph_decode_codeblock;
+      find_max_val = codeblock::gen_find_max_val;
+      mem_clear = codeblock::gen_mem_clear;
+      if (reversible) {
+        tx_to_cb = codeblock::gen_rev_tx_to_cb;
+        tx_from_cb = codeblock::gen_rev_tx_from_cb;
+      }
+      else
+      {
+        tx_to_cb = codeblock::gen_irv_tx_to_cb;
+        tx_from_cb = codeblock::gen_irv_tx_from_cb;
+      }
+
+#ifndef OJPH_DISABLE_INTEL_SIMD
+
+      if (get_cpu_ext_level() >= X86_CPU_EXT_LEVEL_SSE)
+        mem_clear = sse_mem_clear;
+
+      if (get_cpu_ext_level() >= X86_CPU_EXT_LEVEL_SSE2) {
+        find_max_val = sse2_find_max_val;
+        if (reversible) {
+          tx_to_cb = sse2_rev_tx_to_cb;
+          tx_from_cb = sse2_rev_tx_from_cb;
+        }
+        else {
+          tx_to_cb = sse2_irv_tx_to_cb;
+          tx_from_cb = sse2_irv_tx_from_cb;
+        }
+      }
+
+      if (get_cpu_ext_level() >= X86_CPU_EXT_LEVEL_SSSE3)
+        decode_cb = ojph_decode_codeblock_ssse3;
+
+
+      if (get_cpu_ext_level() >= X86_CPU_EXT_LEVEL_AVX)
+        mem_clear = avx_mem_clear;
+
+      if (get_cpu_ext_level() >= X86_CPU_EXT_LEVEL_AVX2) {
+        find_max_val = avx2_find_max_val;
+        if (reversible) {
+          tx_to_cb = avx2_rev_tx_to_cb;
+          tx_from_cb = avx2_rev_tx_from_cb;
+        }
+        else {
+          tx_to_cb = avx2_irv_tx_to_cb;
+          tx_from_cb = avx2_irv_tx_from_cb;
+        }
+      }
+
+#endif // !OJPH_DISABLE_INTEL_SIMD
+
+#else // OJPH_ENABLE_WASM_SIMD
+
+      decode_cb = ojph_decode_codeblock_wasm;
+      find_max_val = wasm_find_max_val;
+      mem_clear = wasm_mem_clear;
+      if (reversible) {
+        tx_to_cb = wasm_rev_tx_to_cb;
+        tx_from_cb = wasm_rev_tx_from_cb;
+      }
+      else {
+        tx_to_cb = wasm_irv_tx_to_cb;
+        tx_from_cb = wasm_irv_tx_from_cb;
+      }
+
+#endif // !OJPH_ENABLE_WASM_SIMD
+
     }
 
     //////////////////////////////////////////////////////////////////////////
     void codeblock::push(line_buf *line)
     {
+      // convert to sign and magnitude and keep max_val
       const si32 *sp = line->i32 + line_offset;
       ui32 *dp = buf + cur_line * stride;
-      int tmax = max_val; //this improves speed considerably
-      for (ui32 i = cb_size.w; i > 0; --i)
-      {
-        si32 t = *sp++;
-        tmax = ojph_max(tmax, 0x7FFFFFFF & t);
-        *dp++ = (ui32)t;
-      }
-      //for (ui32 i = stride - cb_size.w; i > 0; --i)
-      //  *dp++ = 0;
-      max_val = tmax;
+      tx_to_cb(sp, dp, K_max, delta_inv, cb_size.w, max_val);
       ++cur_line;
     }
 
     //////////////////////////////////////////////////////////////////////////
     void codeblock::encode(mem_elastic_allocator *elastic)
     {
-      if (max_val >= 1<<(31 - K_max))
+      ui32 mv = find_max_val(max_val);
+      if (mv >= 1u<<(31 - K_max))
       {
         coded_cb->missing_msbs = K_max - 1;
         assert(coded_cb->missing_msbs > 0);
@@ -4022,7 +4042,9 @@ namespace ojph {
       this->cb_size = cb_size;
       this->coded_cb = coded_cb;
       this->cur_line = 0;
-      this->max_val = 0;
+      for (int i = 0; i < 8; ++i)
+        this->max_val[i] = 0;
+      this->zero_block = false;
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -4031,8 +4053,7 @@ namespace ojph {
       if (coded_cb->pass_length[0] > 0 && coded_cb->num_passes > 0 &&
           coded_cb->next_coded != NULL)
       {
-        bool result =
-          ojph::local::ojph_decode_codeblock(
+        bool result = decode_cb(
             coded_cb->next_coded->buf + coded_cb_header::prefix_buf_size,
             buf, coded_cb->missing_msbs, coded_cb->num_passes,
             coded_cb->pass_length[0], coded_cb->pass_length[1],
@@ -4041,21 +4062,109 @@ namespace ojph {
         if (result == false)
           {
             if (resilient == true)
-              memset(buf, 0, cb_size.h * stride * sizeof(si32));
+              zero_block = true;
             else
               OJPH_ERROR(0x000300A1, "Error decoding a codeblock\n");
           }
       }
       else
-        memset(buf, 0, cb_size.h * stride * sizeof(si32));
+        zero_block = true;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    void codeblock::gen_mem_clear(void* addr, size_t count)
+    {
+      ui32* p = (ui32*)addr;
+      for (size_t i = 0; i < count; i += 4, p += 1)
+        *p = 0;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    void codeblock::gen_rev_tx_to_cb(const void *sp, ui32 *dp, ui32 K_max, 
+                                     float delta_inv, ui32 count, 
+                                     ui32* max_val)
+    {
+      ojph_unused(delta_inv);
+      ui32 shift = 31 - K_max;
+      // convert to sign and magnitude and keep max_val
+      ui32 tmax = *max_val;
+      si32 *p = (si32*)sp;
+      for (ui32 i = count; i > 0; --i)
+      {
+        si32 v = *p++;
+        ui32 sign = v >= 0 ? 0 : 0x80000000;
+        ui32 val = (ui32)(v >= 0 ? v : -v);
+        val <<= shift;
+        *dp++ = sign | val;
+        tmax |= val; // it is more efficient to use or than max
+      }
+      *max_val = tmax;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    void codeblock::gen_irv_tx_to_cb(const void *sp, ui32 *dp, ui32 K_max,
+                                     float delta_inv, ui32 count, 
+                                     ui32* max_val)
+    {
+      ojph_unused(K_max);
+      //quantize and convert to sign and magnitude and keep max_val
+      ui32 tmax = *max_val;
+      float *p = (float*)sp;
+      for (ui32 i = count; i > 0; --i)
+      {
+        float v = *p++;
+        si32 t = ojph_trunc(v * delta_inv);
+        ui32 sign = t >= 0 ? 0 : 0x80000000;
+        ui32 val = (ui32)(t >= 0 ? t : -t);
+        *dp++ = sign | val;
+        tmax |= val; // it is more efficient to use or than max
+      }
+      *max_val = tmax;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    void codeblock::gen_rev_tx_from_cb(const ui32 *sp, void *dp, ui32 K_max,
+                                       float delta, ui32 count)
+    {
+      ojph_unused(delta);
+      ui32 shift = 31 - K_max;
+      //convert to sign and magnitude
+      si32 *p = (si32*)dp;
+      for (ui32 i = count; i > 0; --i)
+      {
+        ui32 v = *sp++;
+        si32 val = (v & 0x7FFFFFFF) >> shift;
+        *p++ = (v & 0x80000000) ? -val : val;
+      }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    void codeblock::gen_irv_tx_from_cb(const ui32 *sp, void *dp, ui32 K_max,
+                                       float delta, ui32 count)
+    {
+      ojph_unused(K_max);
+      //convert to sign and magnitude
+      float *p = (float*)dp;
+      for (ui32 i = count; i > 0; --i)
+      {
+        ui32 v = *sp++;
+        float val = (float)(v & 0x7FFFFFFF) * delta;
+        *p++ = (v & 0x80000000) ? -val : val;
+      }
     }
 
     //////////////////////////////////////////////////////////////////////////
     void codeblock::pull_line(line_buf *line)
     {
-      const ui32 *sp = buf + cur_line * stride;
       si32 *dp = line->i32 + line_offset;
-      memcpy(dp, sp, cb_size.w * sizeof(si32));
+      if (!zero_block)
+      {
+        //convert to sign and magnitude
+        const ui32 *sp = buf + cur_line * stride;
+        tx_from_cb(sp, dp, K_max, delta, cb_size.w);
+      }
+      else
+        mem_clear(dp, cb_size.w * sizeof(*dp));
       ++cur_line;
       assert(cur_line <= cb_size.h);
     }
