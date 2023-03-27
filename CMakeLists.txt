@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10.0)
+cmake_minimum_required(VERSION 3.11.0)
 
 project (openjph DESCRIPTION "Open source implementation of JPH" LANGUAGES CXX)
 
@@ -15,11 +15,11 @@ if (NOT VERFILE)
     message(FATAL_ERROR "Failed to parse ojph_version.h!")
 endif()
 
-string(REGEX MATCH "OPENJPH_VERSION_MAJOR ([0-9])*" _ ${VERFILE})
+string(REGEX MATCH "OPENJPH_VERSION_MAJOR ([0-9]*)" _ ${VERFILE})
 set(OPENJPH_VERSION_MAJOR ${CMAKE_MATCH_1})
-string(REGEX MATCH "OPENJPH_VERSION_MINOR ([0-9])*" _ ${VERFILE})
+string(REGEX MATCH "OPENJPH_VERSION_MINOR ([0-9]*)" _ ${VERFILE})
 set(OPENJPH_VERSION_MINOR ${CMAKE_MATCH_1})
-string(REGEX MATCH "OPENJPH_VERSION_PATCH ([0-9])*" _ ${VERFILE})
+string(REGEX MATCH "OPENJPH_VERSION_PATCH ([a-z0-9]*)" _ ${VERFILE})
 set(OPENJPH_VERSION_PATCH ${CMAKE_MATCH_1})
 
 set(OPENJPH_VERSION "${OPENJPH_VERSION_MAJOR}.${OPENJPH_VERSION_MINOR}.${OPENJPH_VERSION_PATCH}")
@@ -28,14 +28,22 @@ set(OPENJPH_VERSION "${OPENJPH_VERSION_MAJOR}.${OPENJPH_VERSION_MINOR}.${OPENJPH
 option(OJPH_DISABLE_INTEL_SIMD "Disables the use of SIMD instructions and associated files" OFF)
 option(BUILD_SHARED_LIBS "Shared Libraries" ON)
 option(OJPH_ENABLE_TIFF_SUPPORT "Enables input and output support for TIFF files" ON)
-option(OJPH_BUILD_TEST "Enables building test code" OFF)
+option(OJPH_BUILD_TESTS "Enables building test code" OFF)
+
+# This is related to how the timestamp is set for URL downloaded files.
+# Set DOWNLOAD_EXTRACT_TIMESTAMP
+if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24.0")
+  if(POLICY CMP0065)
+    cmake_policy(SET CMP0135 NEW)
+  endif()
+endif()
 
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 message(STATUS "Builing ${CMAKE_BUILD_TYPE}")
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 if (MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc /D \"_CRT_SECURE_NO_WARNINGS\"")
 endif()
@@ -247,11 +255,11 @@ install(FILES "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${PROJECT_NAME}.pc"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 ################################################################################################
-# Testing (OJPH_BUILD_TEST)
+# Testing (OJPH_BUILD_TESTS)
 ################################################################################################
 
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND OJPH_BUILD_TEST)
-    include(CTest)
-    add_subdirectory(tests)
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND OJPH_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
 endif()
 
