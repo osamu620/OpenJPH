@@ -73,7 +73,7 @@ namespace ojph {
     void init(int argc, char *argv[]) {
       assert(avail == avail_store);
       if (argc > 128)
-        avail = new ui8[(argc + 7) >> 3];
+        avail = new ui8[((ui32)argc + 7u) >> 3];
       memset(avail, 0, 
         ojph_max(sizeof(avail_store), (size_t)((argc + 7) >> 3)));
       this->argv = argv;
@@ -200,6 +200,17 @@ namespace ojph {
         }
       }
     }
+
+    ///////////////////////////////////////////////////////////////////////////
+    bool reinterpret(const char *str) {
+      argument t = find_argument(str);
+      if (t.is_valid()) {
+        release_argument(t);
+        return true;
+      }
+      else
+        return false;
+    }    
 
     ///////////////////////////////////////////////////////////////////////////
     void reinterpret_to_bool(const char *str, int& val) {
