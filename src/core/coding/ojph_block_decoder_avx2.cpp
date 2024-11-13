@@ -2,21 +2,22 @@
 // This software is released under the 2-Clause BSD license, included
 // below.
 //
-// Copyright (c) 2019, Aous Naman 
-// Copyright (c) 2019, Kakadu Software Pty Ltd, Australia
-// Copyright (c) 2019, The University of New South Wales, Australia
-// 
+// Copyright (c) 2022, Aous Naman
+// Copyright (c) 2022, Kakadu Software Pty Ltd, Australia
+// Copyright (c) 2022, The University of New South Wales, Australia
+// Copyright (c) 2024, Intel Corporation
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright
 // notice, this list of conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright
 // notice, this list of conditions and the following disclaimer in the
 // documentation and/or other materials provided with the distribution.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 // IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
 // TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
@@ -30,14 +31,12 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //***************************************************************************/
 // This file is part of the OpenJPH software implementation.
-// File: ojph_block_decoder.cpp
-// Author: Aous Naman
-// Date: 13 May 2022
+// File: ojph_block_decoder_avx2.cpp
 //***************************************************************************/
 
 //***************************************************************************/
-/** @file ojph_block_decoder.cpp
- *  @brief implements a HTJ2K block decoder
+/** @file ojph_block_decoder_avx2.cpp
+ *  @brief implements a faster HTJ2K block decoder using avx2
  */
 
 #include <string>
@@ -50,6 +49,8 @@
 #include "ojph_arch.h"
 #include "ojph_message.h"
 
+#include <immintrin.h>
+
 namespace ojph {
   namespace local {
 
@@ -59,7 +60,7 @@ namespace ojph {
      *  A number of events is decoded from the MEL bitstream ahead of time
      *  and stored in run/num_runs.
      *  Each run represents the number of zero events before a one event.
-     */ 
+     */
     struct dec_mel_st {
       dec_mel_st() : data(NULL), tmp(0), bits(0), size(0), unstuff(false),
         k(0), num_runs(0), runs(0)
@@ -79,7 +80,7 @@ namespace ojph {
 
     //************************************************************************/
     /** @brief Reads and unstuffs the MEL bitstream
-     * 
+     *
      *  This design needs more bytes in the codeblock buffer than the length
      *  of the cleanup pass by up to 2 bytes.
      *
@@ -104,7 +105,7 @@ namespace ojph {
       else if (melp->size > 0)
       { // 4 or less
         int i = 0;
-        while (melp->size > 1) {   
+        while (melp->size > 1) {
           ui32 v = *melp->data++;    // read one byte at a time
           ui32 m = ~(0xFFu << i);    // mask of location
           val = (val & m) | (v << i);// put one byte in its correct location
@@ -112,21 +113,21 @@ namespace ojph {
           i += 8;
         }
         // size equal to 1
-        ui32 v = *melp->data++;    // the one before the last is different 
+        ui32 v = *melp->data++;    // the one before the last is different
         v |= 0xF;                  // MEL and VLC segments can overlap
         ui32 m = ~(0xFFu << i);
         val = (val & m) | (v << i);
         --melp->size;
       }
-      
+
       // next we unstuff them before adding them to the buffer
       int bits = 32 - melp->unstuff; // number of bits in val, subtract 1 if
-                                     // the previously read byte requires 
+                                     // the previously read byte requires
                                      // unstuffing
 
       // data is unstuffed and accumulated in t
       // bits has the number of bits in t
-      ui32 t = val & 0xFF; 
+      ui32 t = val & 0xFF;
       bool unstuff = ((val & 0xFF) == 0xFF); // true if we need unstuffing
       bits -= unstuff; // there is one less bit in t if unstuffing is needed
       t = t << (8 - unstuff); // move up to make room for the next byte
@@ -153,14 +154,14 @@ namespace ojph {
 
     //************************************************************************/
     /** @brief Decodes unstuffed MEL segment bits stored in tmp to runs
-     * 
+     *
      *  Runs are stored in "runs" and the number of runs in "num_runs".
-     *  Each run represents a number of zero events that may or may not 
+     *  Each run represents a number of zero events that may or may not
      *  terminate in a 1 event.
      *  Each run is stored in 7 bits.  The LSB is 1 if the run terminates in
-     *  a 1 event, 0 otherwise.  The next 6 bits, for the case terminating 
-     *  with 1, contain the number of consecutive 0 zero events * 2; for the 
-     *  case terminating with 0, they store (number of consecutive 0 zero 
+     *  a 1 event, 0 otherwise.  The next 6 bits, for the case terminating
+     *  with 1, contain the number of consecutive 0 zero events * 2; for the
+     *  case terminating with 0, they store (number of consecutive 0 zero
      *  events - 1) * 2.
      *  A total of 6 bits (made up of 1 + 5) should have been enough.
      *
@@ -185,7 +186,7 @@ namespace ojph {
         int run = 0;
         if (melp->tmp & (1ull<<63)) //The next bit to decode (stored in MSB)
         { //one is found
-          run = 1 << eval;  
+          run = 1 << eval;
           run--; // consecutive runs of 0 events - 1
           melp->k = melp->k + 1 < 12 ? melp->k + 1 : 12;//increment, max is 12
           melp->tmp <<= 1; // consume one bit from tmp
@@ -203,14 +204,14 @@ namespace ojph {
         eval = melp->num_runs * 7;           // 7 bits per run
         melp->runs &= ~((ui64)0x3F << eval); // 6 bits are sufficient
         melp->runs |= ((ui64)run) << eval;   // store the value in runs
-        melp->num_runs++;                    // increment count  
+        melp->num_runs++;                    // increment count
       }
     }
 
     //************************************************************************/
     /** @brief Initiates a dec_mel_st structure for MEL decoding and reads
      *         some bytes in order to get the read address to a multiple
-     *         of 4 
+     *         of 4
      *
      *  @param [in]  melp is a pointer to dec_mel_st structure
      *  @param [in]  bbuf is a pointer to byte buffer
@@ -225,7 +226,7 @@ namespace ojph {
       melp->tmp = 0;                   //
       melp->unstuff = false;           // no unstuffing
       melp->size = scup - 1;           // size is the length of MEL+VLC-1
-      melp->k = 0;                     // 0 for state 
+      melp->k = 0;                     // 0 for state
       melp->num_runs = 0;              // num_runs is 0
       melp->runs = 0;                  //
 
@@ -243,7 +244,7 @@ namespace ojph {
         int d_bits = 8 - melp->unstuff; //if unstuffing is needed, reduce by 1
         melp->tmp = (melp->tmp << d_bits) | d; //store bits in tmp
         melp->bits += d_bits;  //increment tmp by number of bits
-        melp->unstuff = ((d & 0xFF) == 0xFF); //true of next byte needs 
+        melp->unstuff = ((d & 0xFF) == 0xFF); //true of next byte needs
                                               //unstuffing
       }
       melp->tmp <<= (64 - melp->bits); //push all the way up so the first bit
@@ -255,7 +256,7 @@ namespace ojph {
      *         MEL segment is decoded
      *
      * @param [in]  melp is a pointer to dec_mel_st structure
-     */    
+     */
     static inline
     int mel_get_run(dec_mel_st *melp)
     {
@@ -271,7 +272,7 @@ namespace ojph {
     //************************************************************************/
     /** @brief A structure for reading and unstuffing a segment that grows
      *         backward, such as VLC and MRP
-     */ 
+     */
     struct rev_struct {
       rev_struct() : data(NULL), tmp(0), bits(0), size(0), unstuff(false)
       {}
@@ -288,27 +289,27 @@ namespace ojph {
     /** @brief Read and unstuff data from a backwardly-growing segment
      *
      *  This reader can read up to 8 bytes from before the VLC segment.
-     *  Care must be taken not read from unreadable memory, causing a 
+     *  Care must be taken not read from unreadable memory, causing a
      *  segmentation fault.
-     * 
+     *
      *  Note that there is another subroutine rev_read_mrp that is slightly
      *  different.  The other one fills zeros when the buffer is exhausted.
      *  This one basically does not care if the bytes are consumed, because
      *  any extra data should not be used in the actual decoding.
      *
-     *  Unstuffing is needed to prevent sequences more than 0xFF8F from 
+     *  Unstuffing is needed to prevent sequences more than 0xFF8F from
      *  appearing in the bits stream; since we are reading backward, we keep
-     *  watch when a value larger than 0x8F appears in the bitstream. 
-     *  If the byte following this is 0x7F, we unstuff this byte (ignore the 
+     *  watch when a value larger than 0x8F appears in the bitstream.
+     *  If the byte following this is 0x7F, we unstuff this byte (ignore the
      *  MSB of that byte, which should be 0).
      *
      *  @param [in]  vlcp is a pointer to rev_struct structure
      */
-    static inline 
+    static inline
     void rev_read(rev_struct *vlcp)
     {
       //process 4 bytes at a time
-      if (vlcp->bits > 32)  // if there are more than 32 bits in tmp, then 
+      if (vlcp->bits > 32)  // if there are more than 32 bits in tmp, then
         return;             // reading 32 bits can overflow vlcp->tmp
       ui32 val = 0;
       //the next line (the if statement) needs to be tested first
@@ -322,7 +323,7 @@ namespace ojph {
       else if (vlcp->size > 0)
       { // 4 or less
         int i = 24;
-        while (vlcp->size > 0) {   
+        while (vlcp->size > 0) {
           ui32 v = *vlcp->data--; // read one byte at a time
           val |= (v << i);        // put byte in its correct location
           --vlcp->size;
@@ -330,34 +331,38 @@ namespace ojph {
         }
       }
 
-      //accumulate in tmp, number of bits in tmp are stored in bits
-      ui32 tmp = val >> 24;  //start with the MSB byte
-      ui32 bits;
+      __m128i tmp_vec = _mm_set1_epi32((int32_t)val);
+      tmp_vec = _mm_srlv_epi32(tmp_vec, _mm_setr_epi32(24, 16, 8, 0));
+      tmp_vec = _mm_and_si128(tmp_vec, _mm_set1_epi32(0xff));
 
-      // test unstuff (previous byte is >0x8F), and this byte is 0x7F
-      bits = 8 - ((vlcp->unstuff && (((val >> 24) & 0x7F) == 0x7F)) ? 1 : 0);
-      bool unstuff = (val >> 24) > 0x8F; //this is for the next byte
+      __m128i unstuff_vec = _mm_cmpgt_epi32(tmp_vec, _mm_set1_epi32(0x8F));
+      bool unstuff_next = _mm_extract_epi32(unstuff_vec, 3);
+      unstuff_vec = _mm_slli_si128(unstuff_vec, 4);
+      unstuff_vec = _mm_insert_epi32(unstuff_vec, vlcp->unstuff * 0xffffffff, 0);
 
-      tmp |= ((val >> 16) & 0xFF) << bits; //process the next byte
-      bits += 8 - ((unstuff && (((val >> 16) & 0x7F) == 0x7F)) ? 1 : 0);
-      unstuff = ((val >> 16) & 0xFF) > 0x8F;
+      __m128i val_7f = _mm_set1_epi32(0x7F);
+      __m128i this_byte_7f = _mm_cmpeq_epi32(_mm_and_si128(tmp_vec, val_7f), val_7f);
+      unstuff_vec = _mm_and_si128(unstuff_vec, this_byte_7f);
+      unstuff_vec = _mm_srli_epi32(unstuff_vec, 31);
 
-      tmp |= ((val >> 8) & 0xFF) << bits;
-      bits += 8 - ((unstuff && (((val >> 8) & 0x7F) == 0x7F)) ? 1 : 0);
-      unstuff = ((val >> 8) & 0xFF) > 0x8F;
+      __m128i inc_sum = _mm_sub_epi32(_mm_set1_epi32(8), unstuff_vec);
+      inc_sum = _mm_add_epi32(inc_sum, _mm_bslli_si128(inc_sum, 4));
+      inc_sum = _mm_add_epi32(inc_sum, _mm_bslli_si128(inc_sum, 8));
+      ui32 total_bits = (ui32)_mm_extract_epi32(inc_sum, 3);
 
-      tmp |= (val & 0xFF) << bits;
-      bits += 8 - ((unstuff && ((val & 0x7F) == 0x7F)) ? 1 : 0);
-      unstuff = (val & 0xFF) > 0x8F;
+      __m128i final_shift = _mm_slli_si128(inc_sum, 4);
+      tmp_vec = _mm_sllv_epi32(tmp_vec, final_shift);
+      tmp_vec = _mm_or_si128(tmp_vec, _mm_bsrli_si128(tmp_vec, 8));
 
-      // now move the read and unstuffed bits into vlcp->tmp
-      vlcp->tmp |= (ui64)tmp << vlcp->bits;
-      vlcp->bits += bits;
-      vlcp->unstuff = unstuff; // this for the next read
+      ui64 tmp = (ui32)_mm_cvtsi128_si32(tmp_vec) | (ui32)_mm_extract_epi32(tmp_vec, 1);
+
+      vlcp->unstuff = unstuff_next;
+      vlcp->tmp |= tmp << vlcp->bits;
+      vlcp->bits += total_bits;
     }
 
     //************************************************************************/
-    /** @brief Initiates the rev_struct structure and reads a few bytes to 
+    /** @brief Initiates the rev_struct structure and reads a few bytes to
      *         move the read address to multiple of 4
      *
      *  There is another similar rev_init_mrp subroutine.  The difference is
@@ -370,7 +375,7 @@ namespace ojph {
      *  @param [in]  lcup is the length of MagSgn+MEL+VLC segments
      *  @param [in]  scup is the length of MEL+VLC segments
      */
-    static inline 
+    static inline
     void rev_init(rev_struct *vlcp, ui8* data, int lcup, int scup)
     {
       //first byte has only the upper 4 bits
@@ -405,13 +410,13 @@ namespace ojph {
     }
 
     //************************************************************************/
-    /** @brief Retrieves 32 bits from the head of a rev_struct structure 
+    /** @brief Retrieves 32 bits from the head of a rev_struct structure
      *
      *  By the end of this call, vlcp->tmp must have no less than 33 bits
      *
      *  @param [in]  vlcp is a pointer to rev_struct structure
      */
-    static inline 
+    static inline
     ui32 rev_fetch(rev_struct *vlcp)
     {
       if (vlcp->bits < 32)  // if there are less then 32 bits, read more
@@ -429,7 +434,7 @@ namespace ojph {
      *  @param [in]  vlcp is a pointer to rev_struct structure
      *  @param [in]  num_bits is the number of bits to be removed
      */
-    static inline 
+    static inline
     ui32 rev_advance(rev_struct *vlcp, ui32 num_bits)
     {
       assert(num_bits <= vlcp->bits); // vlcp->tmp must have more than num_bits
@@ -449,7 +454,7 @@ namespace ojph {
      *
      *  @param [in]  mrp is a pointer to rev_struct structure
      */
-    static inline 
+    static inline
     void rev_read_mrp(rev_struct *mrp)
     {
       //process 4 bytes at a time
@@ -465,7 +470,7 @@ namespace ojph {
       else if (mrp->size > 0)
       {
         int i = 24;
-        while (mrp->size > 0) {   
+        while (mrp->size > 0) {
           ui32 v = *mrp->data--; // read one byte at a time
           val |= (v << i);       // put byte in its correct location
           --mrp->size;
@@ -505,7 +510,7 @@ namespace ojph {
      *         an architecture that read size must be compatible with the
      *         alignment of the read address
      *
-     *  There is another similar subroutine rev_init.  This subroutine does 
+     *  There is another similar subroutine rev_init.  This subroutine does
      *  NOT skip the first 12 bits, and starts with unstuff set to true.
      *
      *  @param [in]  mrp is a pointer to rev_struct structure
@@ -513,7 +518,7 @@ namespace ojph {
      *  @param [in]  lcup is the length of MagSgn+MEL+VLC segments
      *  @param [in]  len2 is the length of SPP+MRP segments
      */
-    static inline 
+    static inline
     void rev_init_mrp(rev_struct *mrp, ui8* data, int lcup, int len2)
     {
       mrp->data = data + lcup + len2 - 1;
@@ -530,7 +535,7 @@ namespace ojph {
       for (int i = 0; i < num; ++i) {
         ui64 d;
         //read a byte, 0 if no more data
-        d = (mrp->size-- > 0) ? *mrp->data-- : 0; 
+        d = (mrp->size-- > 0) ? *mrp->data-- : 0;
         //check if unstuffing is needed
         ui32 d_bits = 8 - ((mrp->unstuff && ((d & 0x7F) == 0x7F)) ? 1 : 0);
         mrp->tmp |= d << mrp->bits; // move data to vlcp->tmp
@@ -541,13 +546,13 @@ namespace ojph {
     }
 
     //************************************************************************/
-    /** @brief Retrieves 32 bits from the head of a rev_struct structure 
+    /** @brief Retrieves 32 bits from the head of a rev_struct structure
      *
      *  By the end of this call, mrp->tmp must have no less than 33 bits
      *
      *  @param [in]  mrp is a pointer to rev_struct structure
      */
-    static inline 
+    static inline
     ui32 rev_fetch_mrp(rev_struct *mrp)
     {
       if (mrp->bits < 32) // if there are less than 32 bits in mrp->tmp
@@ -565,8 +570,7 @@ namespace ojph {
      *  @param [in]  mrp is a pointer to rev_struct structure
      *  @param [in]  num_bits is the number of bits to be removed
      */
-    static inline 
-    ui32 rev_advance_mrp(rev_struct *mrp, ui32 num_bits)
+    inline ui32 rev_advance_mrp(rev_struct *mrp, ui32 num_bits)
     {
       assert(num_bits <= mrp->bits); // we must not consume more than mrp->bits
       mrp->tmp >>= num_bits;  // discard the lowest num_bits bits
@@ -575,86 +579,118 @@ namespace ojph {
     }
 
     //************************************************************************/
-    /** @brief State structure for reading and unstuffing of forward-growing 
+    /** @brief State structure for reading and unstuffing of forward-growing
      *         bitstreams; these are: MagSgn and SPP bitstreams
      */
     struct frwd_struct {
       const ui8* data;  //!<pointer to bitstream
-      ui64 tmp;         //!<temporary buffer of read data
+      ui8 tmp[48];      //!<temporary buffer of read data + 16 extra
       ui32 bits;        //!<number of bits stored in tmp
       ui32 unstuff;     //!<1 if a bit needs to be unstuffed from next byte
       int size;         //!<size of data
     };
 
     //************************************************************************/
-    /** @brief Read and unstuffs 32 bits from forward-growing bitstream
-     *  
+    /** @brief Read and unstuffs 16 bytes from forward-growing bitstream
+     *
      *  A template is used to accommodate a different requirement for
      *  MagSgn and SPP bitstreams; in particular, when MagSgn bitstream is
      *  consumed, 0xFF's are fed, while when SPP is exhausted 0's are fed in.
      *  X controls this value.
      *
      *  Unstuffing prevent sequences that are more than 0xFF7F from appearing
-     *  in the conpressed sequence.  So whenever a value of 0xFF is coded, the
+     *  in the compressed sequence.  So whenever a value of 0xFF is coded, the
      *  MSB of the next byte is set 0 and must be ignored during decoding.
      *
-     *  Reading can go beyond the end of buffer by up to 3 bytes.
+     *  Reading can go beyond the end of buffer by up to 16 bytes.
      *
      *  @tparam       X is the value fed in when the bitstream is exhausted
      *  @param  [in]  msp is a pointer to frwd_struct structure
      *
-     */ 
+     */
     template<int X>
-    static inline 
+    static inline
     void frwd_read(frwd_struct *msp)
     {
-      assert(msp->bits <= 32); // assert that there is a space for 32 bits
+      assert(msp->bits <= 128);
 
-      ui32 val = 0;
-      if (msp->size > 3) {
-        val = *(ui32*)msp->data;  // read 32 bits
-        msp->data += 4;           // increment pointer
-        msp->size -= 4;           // reduce size
-      }
-      else if (msp->size > 0)
+      __m128i offset, val, validity, all_xff;
+      val = _mm_loadu_si128((__m128i*)msp->data);
+      int bytes = msp->size >= 16 ? 16 : msp->size;
+      validity = _mm_set1_epi8((char)bytes);
+      msp->data += bytes;
+      msp->size -= bytes;
+      int bits = 128;
+      offset = _mm_set_epi64x(0x0F0E0D0C0B0A0908,0x0706050403020100);
+      validity = _mm_cmpgt_epi8(validity, offset);
+      all_xff = _mm_set1_epi8(-1);
+      if (X == 0xFF) // the compiler should remove this if statement
       {
-        int i = 0;
-        val = X != 0 ? 0xFFFFFFFFu : 0;
-        while (msp->size > 0) {   
-          ui32 v = *msp->data++;    // read one byte at a time
-          ui32 m = ~(0xFFu << i);    // mask of location
-          val = (val & m) | (v << i);// put one byte in its correct location
-          --msp->size;
-          i += 8;          
-        }
+        __m128i t = _mm_xor_si128(validity, all_xff); // complement
+        val = _mm_or_si128(t, val); // fill with 0xFF
       }
+      else if (X == 0)
+        val = _mm_and_si128(validity, val); // fill with zeros
       else
-        val = X != 0 ? 0xFFFFFFFFu : 0;
+        assert(0);
 
-      // we accumulate in t and keep a count of the number of bits in bits
-      ui32 bits = 8 - msp->unstuff;        
-      ui32 t = val & 0xFF;
-      bool unstuff = ((val & 0xFF) == 0xFF);  // Do we need unstuffing next?
+      __m128i ff_bytes;
+      ff_bytes = _mm_cmpeq_epi8(val, all_xff);
+      ff_bytes = _mm_and_si128(ff_bytes, validity);
+      ui32 flags = (ui32)_mm_movemask_epi8(ff_bytes);
+      flags <<= 1; // unstuff following byte
+      ui32 next_unstuff = flags >> 16;
+      flags |= msp->unstuff;
+      flags &= 0xFFFF;
+      while (flags)
+      { // bit unstuffing occurs on average once every 256 bytes
+        // therefore it is not an issue if it is a bit slow
+        // here we process 16 bytes
+        --bits; // consuming one stuffing bit
 
-      t |= ((val >> 8) & 0xFF) << bits;
-      bits += 8 - unstuff;
-      unstuff = (((val >> 8) & 0xFF) == 0xFF);
+        ui32 loc = 31 - count_leading_zeros(flags);
+        flags ^= 1 << loc;
 
-      t |= ((val >> 16) & 0xFF) << bits;
-      bits += 8 - unstuff;
-      unstuff = (((val >> 16) & 0xFF) == 0xFF);
+        __m128i m, t, c;
+        t = _mm_set1_epi8((char)loc);
+        m = _mm_cmpgt_epi8(offset, t);
 
-      t |= ((val >> 24) & 0xFF) << bits;
-      bits += 8 - unstuff;
-      msp->unstuff = (((val >> 24) & 0xFF) == 0xFF); // for next byte
+        t = _mm_and_si128(m, val);  // keep bits at locations larger than loc
+        c = _mm_srli_epi64(t, 1);   // 1 bits left
+        t = _mm_srli_si128(t, 8);   // 8 bytes left
+        t = _mm_slli_epi64(t, 63);  // keep the MSB only
+        t = _mm_or_si128(t, c);     // combine the above 3 steps
 
-      msp->tmp |= ((ui64)t) << msp->bits;  // move data to msp->tmp
-      msp->bits += bits;
+        val = _mm_or_si128(t, _mm_andnot_si128(m, val));
+      }
+
+      // combine with earlier data
+      assert(msp->bits >= 0 && msp->bits <= 128);
+      int cur_bytes = msp->bits >> 3;
+      int cur_bits = msp->bits & 7;
+      __m128i b1, b2;
+      b1 = _mm_sll_epi64(val, _mm_set1_epi64x(cur_bits));
+      b2 = _mm_slli_si128(val, 8);  // 8 bytes right
+      b2 = _mm_srl_epi64(b2, _mm_set1_epi64x(64-cur_bits));
+      b1 = _mm_or_si128(b1, b2);
+      b2 = _mm_loadu_si128((__m128i*)(msp->tmp + cur_bytes));
+      b2 = _mm_or_si128(b1, b2);
+      _mm_storeu_si128((__m128i*)(msp->tmp + cur_bytes), b2);
+
+      int consumed_bits = bits < 128 - cur_bits ? bits : 128 - cur_bits;
+      cur_bytes = (msp->bits + (ui32)consumed_bits + 7) >> 3; // round up
+      int upper = _mm_extract_epi16(val, 7);
+      upper >>= consumed_bits - 128 + 16;
+      msp->tmp[cur_bytes] = (ui8)upper; // copy byte
+
+      msp->bits += (ui32)bits;
+      msp->unstuff = next_unstuff;   // next unstuff
+      assert(msp->unstuff == 0 || msp->unstuff == 1);
     }
 
     //************************************************************************/
     /** @brief Initialize frwd_struct struct and reads some bytes
-     *  
+     *
      *  @tparam      X is the value fed in when the bitstream is exhausted.
      *               See frwd_read regarding the template
      *  @param [in]  msp is a pointer to frwd_struct
@@ -666,26 +702,15 @@ namespace ojph {
     void frwd_init(frwd_struct *msp, const ui8* data, int size)
     {
       msp->data = data;
-      msp->tmp = 0;
+      _mm_storeu_si128((__m128i *)msp->tmp, _mm_setzero_si128());
+      _mm_storeu_si128((__m128i *)msp->tmp + 1, _mm_setzero_si128());
+      _mm_storeu_si128((__m128i *)msp->tmp + 2, _mm_setzero_si128());
+
       msp->bits = 0;
       msp->unstuff = 0;
       msp->size = size;
 
-      //This code is designed for an architecture that read address should
-      // align to the read size (address multiple of 4 if read size is 4)
-      //These few lines take care of the case where data is not at a multiple
-      // of 4 boundary.  It reads 1,2,3 up to 4 bytes from the bitstream
-      int num = 4 - (int)(intptr_t(msp->data) & 0x3);
-      for (int i = 0; i < num; ++i)
-      {
-        ui64 d;
-        //read a byte if the buffer is not exhausted, otherwise set it to X
-        d = msp->size-- > 0 ? *msp->data++ : X;
-        msp->tmp |= (d << msp->bits);      // store data in msp->tmp
-        msp->bits += 8 - msp->unstuff;     // number of bits added to msp->tmp
-        msp->unstuff = ((d & 0xFF) == 0xFF); // unstuffing for next byte
-      }
-      frwd_read<X>(msp); // read 32 bits more
+      frwd_read<X>(msp); // read 128 bits more
     }
 
     //************************************************************************/
@@ -694,12 +719,36 @@ namespace ojph {
      *  @param [in]  msp is a pointer to frwd_struct
      *  @param [in]  num_bits is the number of bit to consume
      */
-    static inline 
+    static inline
     void frwd_advance(frwd_struct *msp, ui32 num_bits)
     {
-      assert(num_bits <= msp->bits);
-      msp->tmp >>= num_bits;  // consume num_bits
+      assert(num_bits > 0 && num_bits <= msp->bits && num_bits < 128);
       msp->bits -= num_bits;
+
+      __m128i *p = (__m128i*)(msp->tmp + ((num_bits >> 3) & 0x18));
+      num_bits &= 63;
+
+      __m128i v0, v1, c0, c1, t;
+      v0 = _mm_loadu_si128(p);
+      v1 = _mm_loadu_si128(p + 1);
+
+      // shift right by num_bits
+      c0 = _mm_srl_epi64(v0, _mm_set1_epi64x(num_bits));
+      t = _mm_srli_si128(v0, 8);
+      t = _mm_sll_epi64(t, _mm_set1_epi64x(64 - num_bits));
+      c0 = _mm_or_si128(c0, t);
+      t = _mm_slli_si128(v1, 8);
+      t = _mm_sll_epi64(t, _mm_set1_epi64x(64 - num_bits));
+      c0 = _mm_or_si128(c0, t);
+
+      _mm_storeu_si128((__m128i*)msp->tmp, c0);
+
+      c1 = _mm_srl_epi64(v1, _mm_set1_epi64x(num_bits));
+      t = _mm_srli_si128(v1, 8);
+      t = _mm_sll_epi64(t, _mm_set1_epi64x(64 - num_bits));
+      c1 = _mm_or_si128(c1, t);
+
+      _mm_storeu_si128((__m128i*)msp->tmp + 1, c1);
     }
 
     //************************************************************************/
@@ -710,16 +759,291 @@ namespace ojph {
      *  @param [in]  msp is a pointer to frwd_struct
      */
     template<int X>
-    static inline 
-    ui32 frwd_fetch(frwd_struct *msp)
+    static inline
+    __m128i frwd_fetch(frwd_struct *msp)
     {
-      if (msp->bits < 32)
+      if (msp->bits <= 128)
       {
         frwd_read<X>(msp);
-        if (msp->bits < 32) //need to test
+        if (msp->bits <= 128) //need to test
           frwd_read<X>(msp);
       }
-      return (ui32)msp->tmp;
+      __m128i t = _mm_loadu_si128((__m128i*)msp->tmp);
+      return t;
+    }
+
+    //************************************************************************/
+    /** @brief decodes twos consecutive quads (one octet), using 32 bit data
+     *
+     *  @param inf_u_q  decoded VLC code, with interleaved u values
+     *  @param U_q      U values
+     *  @param magsgn   structure for forward data buffer
+     *  @param p        bitplane at which we are decoding
+     *  @param vn       used for handling E values (stores v_n values)
+     *  @return __m256i decoded two quads
+     */
+    static inline __m256i decode_two_quad32_avx2(__m256i inf_u_q, __m256i U_q, frwd_struct* magsgn, ui32 p, __m128i& vn) {
+        __m256i row = _mm256_setzero_si256();
+
+        // we keeps e_k, e_1, and rho in w2
+        __m256i flags = _mm256_and_si256(inf_u_q, _mm256_set_epi32(0x8880, 0x4440, 0x2220, 0x1110, 0x8880, 0x4440, 0x2220, 0x1110));
+        __m256i insig = _mm256_cmpeq_epi32(flags, _mm256_setzero_si256());
+
+        if ((uint32_t)_mm256_movemask_epi8(insig) != (uint32_t)0xFFFFFFFF) //are all insignificant?
+        {
+            flags = _mm256_mullo_epi16(flags, _mm256_set_epi16(1, 1, 2, 2, 4, 4, 8, 8, 1, 1, 2, 2, 4, 4, 8, 8));
+
+            // U_q holds U_q for this quad
+            // flags has e_k, e_1, and rho such that e_k is sitting in the
+            // 0x8000, e_1 in 0x800, and rho in 0x80
+
+            // next e_k and m_n
+            __m256i m_n;
+            __m256i w0 = _mm256_srli_epi32(flags, 15); // e_k
+            m_n = _mm256_sub_epi32(U_q, w0);
+            m_n = _mm256_andnot_si256(insig, m_n);
+
+            // find cumulative sums
+            // to find at which bit in ms_vec the sample starts
+            __m256i inc_sum = m_n; // inclusive scan
+            inc_sum = _mm256_add_epi32(inc_sum, _mm256_bslli_epi128(inc_sum, 4));
+            inc_sum = _mm256_add_epi32(inc_sum, _mm256_bslli_epi128(inc_sum, 8));
+            int total_mn1 = _mm256_extract_epi16(inc_sum, 6);
+            int total_mn2 = _mm256_extract_epi16(inc_sum, 14);
+
+            __m128i ms_vec0 = _mm_setzero_si128();
+            __m128i ms_vec1 = _mm_setzero_si128();
+            if (total_mn1) {
+                ms_vec0 = frwd_fetch<0xFF>(magsgn);
+                frwd_advance(magsgn, (ui32)total_mn1);
+            }
+            if (total_mn2) {
+                ms_vec1 = frwd_fetch<0xFF>(magsgn);
+                frwd_advance(magsgn, (ui32)total_mn2);
+            }
+
+            __m256i ms_vec = _mm256_inserti128_si256(_mm256_castsi128_si256(ms_vec0), ms_vec1, 0x1);
+
+            __m256i ex_sum = _mm256_bslli_epi128(inc_sum, 4); // exclusive scan
+
+            // find the starting byte and starting bit
+            __m256i byte_idx = _mm256_srli_epi32(ex_sum, 3);
+            __m256i bit_idx = _mm256_and_si256(ex_sum, _mm256_set1_epi32(7));
+            byte_idx = _mm256_shuffle_epi8(byte_idx,
+                _mm256_set_epi32(0x0C0C0C0C, 0x08080808, 0x04040404, 0x00000000, 0x0C0C0C0C, 0x08080808, 0x04040404, 0x00000000));
+            byte_idx = _mm256_add_epi32(byte_idx, _mm256_set1_epi32(0x03020100));
+            __m256i d0 = _mm256_shuffle_epi8(ms_vec, byte_idx);
+            byte_idx = _mm256_add_epi32(byte_idx, _mm256_set1_epi32(0x01010101));
+            __m256i d1 = _mm256_shuffle_epi8(ms_vec, byte_idx);
+
+            // shift samples values to correct location
+            bit_idx = _mm256_or_si256(bit_idx, _mm256_slli_epi32(bit_idx, 16));
+
+            __m128i a = _mm_set_epi8(1, 3, 7, 15, 31, 63, 127, -1, 1, 3, 7, 15, 31, 63, 127, -1);
+            __m256i aa = _mm256_inserti128_si256(_mm256_castsi128_si256(a), a, 0x1);
+
+            __m256i bit_shift = _mm256_shuffle_epi8(aa, bit_idx);
+            bit_shift = _mm256_add_epi16(bit_shift, _mm256_set1_epi16(0x0101));
+            d0 = _mm256_mullo_epi16(d0, bit_shift);
+            d0 = _mm256_srli_epi16(d0, 8); // we should have 8 bits in the LSB
+            d1 = _mm256_mullo_epi16(d1, bit_shift);
+            d1 = _mm256_and_si256(d1, _mm256_set1_epi32((si32)0xFF00FF00)); // 8 in MSB
+            d0 = _mm256_or_si256(d0, d1);
+
+            // find location of e_k and mask
+            __m256i shift;
+            __m256i ones = _mm256_set1_epi32(1);
+            __m256i twos = _mm256_set1_epi32(2);
+            __m256i U_q_m1 = _mm256_sub_epi32(U_q, ones);
+            U_q_m1 = _mm256_and_si256(U_q_m1, _mm256_set_epi32(0, 0, 0, 0x1F, 0, 0, 0, 0x1F));
+            U_q_m1 = _mm256_shuffle_epi32(U_q_m1, 0);
+            w0 = _mm256_sub_epi32(twos, w0);
+            shift = _mm256_sllv_epi32(w0, U_q_m1); // U_q_m1 must be no more than 31
+            ms_vec = _mm256_and_si256(d0, _mm256_sub_epi32(shift, ones));
+
+            // next e_1
+            w0 = _mm256_and_si256(flags, _mm256_set1_epi32(0x800));
+            w0 = _mm256_cmpeq_epi32(w0, _mm256_setzero_si256());
+            w0 = _mm256_andnot_si256(w0, shift);  // e_1 in correct position
+            ms_vec = _mm256_or_si256(ms_vec, w0); // e_1
+            w0 = _mm256_slli_epi32(ms_vec, 31);   // sign
+            ms_vec = _mm256_or_si256(ms_vec, ones); // bin center
+            __m256i tvn = ms_vec;
+            ms_vec = _mm256_add_epi32(ms_vec, twos);// + 2
+            ms_vec = _mm256_slli_epi32(ms_vec, (si32)p - 1);
+            ms_vec = _mm256_or_si256(ms_vec, w0); // sign
+            row = _mm256_andnot_si256(insig, ms_vec); // significant only
+
+            ms_vec = _mm256_andnot_si256(insig, tvn); // significant only
+
+            tvn = _mm256_shuffle_epi8(ms_vec, _mm256_set_epi32(-1, 0x0F0E0D0C, 0x07060504, -1, -1, -1, 0x0F0E0D0C, 0x07060504));
+
+            vn = _mm_or_si128(vn, _mm256_castsi256_si128(tvn));
+            vn = _mm_or_si128(vn, _mm256_extracti128_si256(tvn, 0x1));
+        }
+        return row;
+    }
+
+
+   //************************************************************************/
+    /** @brief decodes twos consecutive quads (one octet), using 16 bit data
+     *
+     *  @param inf_u_q  decoded VLC code, with interleaved u values
+     *  @param U_q      U values
+     *  @param magsgn   structure for forward data buffer
+     *  @param p        bitplane at which we are decoding
+     *  @param vn       used for handling E values (stores v_n values)
+     *  @return __m128i decoded quad
+     */
+
+    static inline __m256i decode_four_quad16(const __m128i inf_u_q, __m128i U_q, frwd_struct* magsgn, ui32 p, __m128i& vn) {
+
+        __m256i w0;     // workers
+        __m256i insig;  // lanes hold FF's if samples are insignificant
+        __m256i flags;  // lanes hold e_k, e_1, and rho
+
+        __m256i row = _mm256_setzero_si256();
+        __m128i ddd = _mm_shuffle_epi8(inf_u_q,
+            _mm_set_epi16(0x0d0c, 0x0d0c, 0x0908, 0x908, 0x0504, 0x0504, 0x0100, 0x0100));
+        w0 = _mm256_permutevar8x32_epi32(_mm256_castsi128_si256(ddd),
+            _mm256_setr_epi32(0, 0, 1, 1, 2, 2, 3, 3));
+        // we keeps e_k, e_1, and rho in w2
+        flags = _mm256_and_si256(w0,
+            _mm256_set_epi16((si16)0x8880, 0x4440, 0x2220, 0x1110,
+                             (si16)0x8880, 0x4440, 0x2220, 0x1110,
+                             (si16)0x8880, 0x4440, 0x2220, 0x1110,
+                             (si16)0x8880, 0x4440, 0x2220, 0x1110));
+        insig = _mm256_cmpeq_epi16(flags, _mm256_setzero_si256());
+        if ((uint32_t)_mm256_movemask_epi8(insig) != (uint32_t)0xFFFFFFFF) //are all insignificant?
+        {
+            ddd = _mm_or_si128(_mm_bslli_si128(U_q, 2), U_q);
+            __m256i U_q_avx = _mm256_permutevar8x32_epi32(_mm256_castsi128_si256(ddd),
+                _mm256_setr_epi32(0, 0, 1, 1, 2, 2, 3, 3));
+            flags = _mm256_mullo_epi16(flags, _mm256_set_epi16(1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8));
+
+            // U_q holds U_q for this quad
+            // flags has e_k, e_1, and rho such that e_k is sitting in the
+            // 0x8000, e_1 in 0x800, and rho in 0x80
+
+            // next e_k and m_n
+            __m256i m_n;
+            w0 = _mm256_srli_epi16(flags, 15); // e_k
+            m_n = _mm256_sub_epi16(U_q_avx, w0);
+            m_n = _mm256_andnot_si256(insig, m_n);
+
+            // find cumulative sums
+            // to find at which bit in ms_vec the sample starts
+            __m256i inc_sum = m_n; // inclusive scan
+            inc_sum = _mm256_add_epi16(inc_sum, _mm256_bslli_epi128(inc_sum, 2));
+            inc_sum = _mm256_add_epi16(inc_sum, _mm256_bslli_epi128(inc_sum, 4));
+            inc_sum = _mm256_add_epi16(inc_sum, _mm256_bslli_epi128(inc_sum, 8));
+            int total_mn1 = _mm256_extract_epi16(inc_sum, 7);
+            int total_mn2 = _mm256_extract_epi16(inc_sum, 15);
+            __m256i ex_sum = _mm256_bslli_epi128(inc_sum, 2); // exclusive scan
+
+            __m128i ms_vec0 = _mm_setzero_si128();
+            __m128i ms_vec1 = _mm_setzero_si128();
+            if (total_mn1) {
+                ms_vec0 = frwd_fetch<0xFF>(magsgn);
+                frwd_advance(magsgn, (ui32)total_mn1);
+            }
+            if (total_mn2) {
+                ms_vec1 = frwd_fetch<0xFF>(magsgn);
+                frwd_advance(magsgn, (ui32)total_mn2);
+            }
+
+            __m256i ms_vec = _mm256_inserti128_si256(_mm256_castsi128_si256(ms_vec0), ms_vec1, 0x1);
+
+            // find the starting byte and starting bit
+            __m256i byte_idx = _mm256_srli_epi16(ex_sum, 3);
+            __m256i bit_idx = _mm256_and_si256(ex_sum, _mm256_set1_epi16(7));
+            byte_idx = _mm256_shuffle_epi8(byte_idx,
+                _mm256_set_epi16(0x0E0E, 0x0C0C, 0x0A0A, 0x0808,
+                    0x0606, 0x0404, 0x0202, 0x0000, 0x0E0E, 0x0C0C, 0x0A0A, 0x0808,
+                    0x0606, 0x0404, 0x0202, 0x0000));
+            byte_idx = _mm256_add_epi16(byte_idx, _mm256_set1_epi16(0x0100));
+            __m256i d0 = _mm256_shuffle_epi8(ms_vec, byte_idx);
+            byte_idx = _mm256_add_epi16(byte_idx, _mm256_set1_epi16(0x0101));
+            __m256i d1 = _mm256_shuffle_epi8(ms_vec, byte_idx);
+
+            // shift samples values to correct location
+            __m256i bit_shift = _mm256_shuffle_epi8(
+                _mm256_set_epi8(1, 3, 7, 15, 31, 63, 127, -1,
+                    1, 3, 7, 15, 31, 63, 127, -1, 1, 3, 7, 15, 31, 63, 127, -1,
+                    1, 3, 7, 15, 31, 63, 127, -1), bit_idx);
+            bit_shift = _mm256_add_epi16(bit_shift, _mm256_set1_epi16(0x0101));
+            d0 = _mm256_mullo_epi16(d0, bit_shift);
+            d0 = _mm256_srli_epi16(d0, 8); // we should have 8 bits in the LSB
+            d1 = _mm256_mullo_epi16(d1, bit_shift);
+            d1 = _mm256_and_si256(d1, _mm256_set1_epi16((si16)0xFF00)); // 8 in MSB
+            d0 = _mm256_or_si256(d0, d1);
+
+            // find location of e_k and mask
+            __m256i shift, t0, t1, Uq0, Uq1;
+            __m256i ones = _mm256_set1_epi16(1);
+            __m256i twos = _mm256_set1_epi16(2);
+            __m256i U_q_m1 = _mm256_sub_epi32(U_q_avx, ones);
+            Uq0 = _mm256_and_si256(U_q_m1, _mm256_set_epi32(0, 0, 0, 0x1F, 0, 0, 0, 0x1F));
+            Uq1 = _mm256_bsrli_epi128(U_q_m1, 14);
+            w0 = _mm256_sub_epi16(twos, w0);
+            t0 = _mm256_and_si256(w0, _mm256_set_epi64x(0, -1, 0, -1));
+            t1 = _mm256_and_si256(w0, _mm256_set_epi64x(-1, 0, -1, 0));
+            {//no _mm256_sllv_epi16 in avx2
+                __m128i t_0_sse = _mm256_castsi256_si128(t0);
+                t_0_sse = _mm_sll_epi16(t_0_sse, _mm256_castsi256_si128(Uq0));
+                __m128i t_1_sse = _mm256_extracti128_si256(t0 , 0x1);
+                t_1_sse = _mm_sll_epi16(t_1_sse, _mm256_extracti128_si256(Uq0, 0x1));
+                t0 = _mm256_inserti128_si256(_mm256_castsi128_si256(t_0_sse), t_1_sse, 0x1);
+
+                t_0_sse = _mm256_castsi256_si128(t1);
+                t_0_sse = _mm_sll_epi16(t_0_sse, _mm256_castsi256_si128(Uq1));
+                t_1_sse = _mm256_extracti128_si256(t1, 0x1);
+                t_1_sse = _mm_sll_epi16(t_1_sse, _mm256_extracti128_si256(Uq1, 0x1));
+                t1 = _mm256_inserti128_si256(_mm256_castsi128_si256(t_0_sse), t_1_sse, 0x1);
+            }
+            shift = _mm256_or_si256(t0, t1);
+            ms_vec = _mm256_and_si256(d0, _mm256_sub_epi16(shift, ones));
+
+            // next e_1
+            w0 = _mm256_and_si256(flags, _mm256_set1_epi16(0x800));
+            w0 = _mm256_cmpeq_epi16(w0, _mm256_setzero_si256());
+            w0 = _mm256_andnot_si256(w0, shift);  // e_1 in correct position
+            ms_vec = _mm256_or_si256(ms_vec, w0); // e_1
+            w0 = _mm256_slli_epi16(ms_vec, 15);   // sign
+            ms_vec = _mm256_or_si256(ms_vec, ones); // bin center
+            __m256i tvn = ms_vec;
+            ms_vec = _mm256_add_epi16(ms_vec, twos);// + 2
+            ms_vec = _mm256_slli_epi16(ms_vec, (si32)p - 1);
+            ms_vec = _mm256_or_si256(ms_vec, w0); // sign
+            row = _mm256_andnot_si256(insig, ms_vec); // significant only
+
+            ms_vec = _mm256_andnot_si256(insig, tvn); // significant only
+
+            __m256i ms_vec_shuffle1 = _mm256_shuffle_epi8(ms_vec,
+                _mm256_set_epi16(-1, -1, -1, -1, 0x0706, 0x0302, -1, -1,
+                                 -1, -1, -1, -1, -1, -1, 0x0706, 0x0302));
+            __m256i ms_vec_shuffle2 = _mm256_shuffle_epi8(ms_vec,
+                _mm256_set_epi16(-1, -1, -1, 0x0F0E, 0x0B0A, -1, -1, -1,
+                                 -1, -1, -1, -1, -1, 0x0F0E, 0x0B0A, -1));
+            ms_vec = _mm256_or_si256(ms_vec_shuffle1, ms_vec_shuffle2);
+
+            vn = _mm_or_si128(vn, _mm256_castsi256_si128(ms_vec));
+            vn = _mm_or_si128(vn, _mm256_extracti128_si256(ms_vec, 0x1));
+        }
+        return row;
+    }
+
+    // https://stackoverflow.com/a/58827596
+    inline __m256i avx2_lzcnt_epi32(__m256i v) {
+        // prevent value from being rounded up to the next power of two
+        v = _mm256_andnot_si256(_mm256_srli_epi32(v, 8), v);  // keep 8 MSB
+
+        v = _mm256_castps_si256(_mm256_cvtepi32_ps(v));    // convert an integer to float
+        v = _mm256_srli_epi32(v, 23);                   // shift down the exponent
+        v = _mm256_subs_epu16(_mm256_set1_epi32(158), v);  // undo bias
+        v = _mm256_min_epi16(v, _mm256_set1_epi32(32));    // clamp at 32
+
+        return v;
     }
 
     //************************************************************************/
@@ -734,16 +1058,16 @@ namespace ojph {
      *  @param [in]   lengths1 is the length of cleanup pass
      *  @param [in]   lengths2 is the length of refinement passes (either SPP
      *                only or SPP+MRP)
-     *  @param [in]   width is the decoded codeblock width 
+     *  @param [in]   width is the decoded codeblock width
      *  @param [in]   height is the decoded codeblock height
-     *  @param [in]   stride is the decoded codeblock buffer stride 
+     *  @param [in]   stride is the decoded codeblock buffer stride
      *  @param [in]   stripe_causal is true for stripe causal mode
      */
-    bool ojph_decode_codeblock(ui8* coded_data, ui32* decoded_data,
-                               ui32 missing_msbs, ui32 num_passes,
-                               ui32 lengths1, ui32 lengths2,
-                               ui32 width, ui32 height, ui32 stride,
-                               bool stripe_causal)
+    bool ojph_decode_codeblock_avx2(ui8* coded_data, ui32* decoded_data,
+                                    ui32 missing_msbs, ui32 num_passes,
+                                    ui32 lengths1, ui32 lengths2,
+                                    ui32 width, ui32 height, ui32 stride,
+                                    bool stripe_causal)
     {
       static bool insufficient_precision = false;
       static bool modify_code = false;
@@ -753,29 +1077,29 @@ namespace ojph {
       {
         OJPH_WARN(0x00010001, "A malformed codeblock that has more than "
                               "one coding pass, but zero length for "
-                              "2nd and potential 3rd pass");
+                              "2nd and potential 3rd pass.");
         num_passes = 1;
       }
 
       if (num_passes > 3)
       {
         OJPH_WARN(0x00010002, "We do not support more than 3 coding passes; "
-                              "This codeblocks has %d passes",
+                              "This codeblocks has %d passes.",
                               num_passes);
         return false;
       }
 
       if (missing_msbs > 30) // p < 0
       {
-        if (insufficient_precision == false) 
+        if (insufficient_precision == false)
         {
           insufficient_precision = true;
           OJPH_WARN(0x00010003, "32 bits are not enough to decode this "
                                 "codeblock. This message will not be "
-                                "displayed again");
+                                "displayed again.");
         }
         return false;
-      }       
+      }
       else if (missing_msbs == 30) // p == 0
       { // not enough precision to decode and set the bin center to 1
         if (modify_code == false) {
@@ -783,7 +1107,7 @@ namespace ojph {
           OJPH_WARN(0x00010004, "Not enough precision to decode the cleanup "
                                 "pass. The code can be modified to support "
                                 "this case. This message will not be "
-                                "displayed again");
+                                "displayed again.");
         }
          return false;         // 32 bits are not enough to decode this
        }
@@ -796,7 +1120,7 @@ namespace ojph {
             OJPH_WARN(0x00010005, "Not enough precision to decode the SgnProp "
                                   "nor MagRef passes; both will be skipped. "
                                   "This message will not be displayed "
-                                  "again");
+                                  "again.");
           }
         }
       }
@@ -806,7 +1130,7 @@ namespace ojph {
 
       if (lengths1 < 2)
       {
-        OJPH_WARN(0x00010006, "Wrong codeblock length");
+        OJPH_WARN(0x00010006, "Wrong codeblock length.");
         return false;
       }
 
@@ -818,35 +1142,37 @@ namespace ojph {
       if (scup < 2 || scup > lcup || scup > 4079) //something is wrong
         return false;
 
-      // The temporary storage scratch holds two types of data in an 
+      // The temporary storage scratch holds two types of data in an
       // interleaved fashion. The interleaving allows us to use one
       // memory pointer.
       // We have one entry for a decoded VLC code, and one entry for UVLC.
-      // Entries are 16 bits each, corresponding to one quad, 
-      // but since we want to use XMM registers of the SSE family 
+      // Entries are 16 bits each, corresponding to one quad,
+      // but since we want to use XMM registers of the SSE family
       // of SIMD; we allocated 16 bytes or more per quad row; that is,
       // the width is no smaller than 16 bytes (or 8 entries), and the
       // height is 512 quads
-      // Each VLC entry contains, in the following order, starting 
+      // Each VLC entry contains, in the following order, starting
       // from MSB
       // e_k (4bits), e_1 (4bits), rho (4bits), useless for step 2 (4bits)
       // Each entry in UVLC contains u_q
       // One extra row to handle the case of SPP propagating downwards
       // when codeblock width is 4
-      ui16 scratch[8 * 513] = {0};       // 8 kB
+      ui16 scratch[8 * 513] = {0};          // 8+ kB
 
       // We need an extra two entries (one inf and one u_q) beyond
-      // the last column. 
-      // If the block width is 4 (2 quads), then we use sstr of 8 
-      // (enough for 4 quads). If width is 8 (4 quads) we use 
-      // sstr is 16 (enough for 8 quads). For a width of 16 (8 
+      // the last column.
+      // If the block width is 4 (2 quads), then we use sstr of 8
+      // (enough for 4 quads). If width is 8 (4 quads) we use
+      // sstr is 16 (enough for 8 quads). For a width of 16 (8
       // quads), we use 24 (enough for 12 quads).
       ui32 sstr = ((width + 2u) + 7u) & ~7u; // multiples of 8
+
+      assert((stride & 0x3) == 0);
 
       ui32 mmsbp2 = missing_msbs + 2;
 
       // The cleanup pass is decoded in two steps; in step one,
-      // the VLC and MEL segments are decoded, generating a record that 
+      // the VLC and MEL segments are decoded, generating a record that
       // has 2 bytes per quad. The 2 bytes contain, u, rho, e^1 & e^k.
       // This information should be sufficient for the next step.
       // In step 2, we decode the MagSgn segment.
@@ -883,13 +1209,13 @@ namespace ojph {
           {
             run -= 2; //subtract 2, since events number if multiplied by 2
 
-            // Is the run terminated in 1? if so, use decoded VLC code, 
-            // otherwise, discard decoded data, since we will decoded again 
+            // Is the run terminated in 1? if so, use decoded VLC code,
+            // otherwise, discard decoded data, since we will decoded again
             // using a different context
             t0 = (run == -1) ? t0 : 0;
 
             // is run -1 or -2? this means a run has been consumed
-            if (run < 0) 
+            if (run < 0)
               run = mel_get_run(&mel);  // get another run
           }
           //run -= (c_q == 0) ? 2 : 0;
@@ -909,7 +1235,7 @@ namespace ojph {
           ui16 t1 = 0;
 
           //decode VLC using the context c_q and the head of VLC bitstream
-          t1 = vlc_tbl0[c_q + (vlc_val & 0x7F)]; 
+          t1 = vlc_tbl0[c_q + (vlc_val & 0x7F)];
 
           // if context is zero, use one MEL event
           if (c_q == 0 && x < width) //zero context
@@ -935,7 +1261,7 @@ namespace ojph {
 
           //remove data from vlc stream, if qinf is not used, cwdlen is 0
           vlc_val = rev_advance(&vlc, t1 & 0x7);
-          
+
           // decode u
           /////////////
           // uvlc_mode is made up of u_offset bits from the quad pair
@@ -958,20 +1284,21 @@ namespace ojph {
           //decode uvlc_mode to get u for both quads
           ui32 uvlc_entry = uvlc_tbl0[uvlc_mode + (vlc_val & 0x3F)];
           //remove total prefix length
-          vlc_val = rev_advance(&vlc, uvlc_entry & 0x7); 
-          uvlc_entry >>= 3; 
+          vlc_val = rev_advance(&vlc, uvlc_entry & 0x7);
+          uvlc_entry >>= 3;
           //extract suffixes for quad 0 and 1
           ui32 len = uvlc_entry & 0xF;           //suffix length for 2 quads
           ui32 tmp = vlc_val & ((1 << len) - 1); //suffix value for 2 quads
           vlc_val = rev_advance(&vlc, len);
+          ojph_unused(vlc_val); //static code analysis: unused value
           uvlc_entry >>= 4;
           // quad 0 length
           len = uvlc_entry & 0x7; // quad 0 suffix length
           uvlc_entry >>= 3;
-          ui16 u_q = (ui16)(1 + (uvlc_entry&7) + (tmp&~(0xFFU<<len)));//kap. 1
+          ui16 u_q = (ui16)(1 + (uvlc_entry&7) + (tmp&~(0xFFU<<len))); //kap. 1
           sp[1] = u_q;
           u_q = (ui16)(1 + (uvlc_entry >> 3) + (tmp >> len));  //kappa == 1
-          sp[3]= u_q;
+          sp[3] = u_q;
         }
         sp[0] = sp[1] = 0;
 
@@ -1001,13 +1328,13 @@ namespace ojph {
             {
               run -= 2; //subtract 2, since events number is multiplied by 2
 
-              // Is the run terminated in 1? if so, use decoded VLC code, 
-              // otherwise, discard decoded data, since we will decoded again 
+              // Is the run terminated in 1? if so, use decoded VLC code,
+              // otherwise, discard decoded data, since we will decoded again
               // using a different context
               t0 = (run == -1) ? t0 : 0;
 
               // is run -1 or -2? this means a run has been consumed
-              if (run < 0) 
+              if (run < 0)
                 run = mel_get_run(&mel);  // get another run
             }
             //run -= (c_q == 0) ? 2 : 0;
@@ -1033,7 +1360,7 @@ namespace ojph {
             ui16 t1 = 0;
 
             //decode VLC using the context c_q and the head of VLC bitstream
-            t1 = vlc_tbl1[ c_q + (vlc_val & 0x7F)]; 
+            t1 = vlc_tbl1[ c_q + (vlc_val & 0x7F)];
 
             // if context is zero, use one MEL event
             if (c_q == 0 && x < width) //zero context
@@ -1062,7 +1389,7 @@ namespace ojph {
 
             //remove data from vlc stream, if qinf is not used, cwdlen is 0
             vlc_val = rev_advance(&vlc, t1 & 0x7);
-          
+
             // decode u
             /////////////
             // uvlc_mode is made up of u_offset bits from the quad pair
@@ -1075,11 +1402,12 @@ namespace ojph {
             ui32 len = uvlc_entry & 0xF;           //suffix length for 2 quads
             ui32 tmp = vlc_val & ((1 << len) - 1); //suffix value for 2 quads
             vlc_val = rev_advance(&vlc, len);
+            ojph_unused(vlc_val); //static code analysis: unused value
             uvlc_entry >>= 4;
             // quad 0 length
             len = uvlc_entry & 0x7; // quad 0 suffix length
             uvlc_entry >>= 3;
-            ui16 u_q = (ui16)((uvlc_entry & 7) + (tmp & ~(0xFU << len))); //u_q
+            ui16 u_q = (ui16)((uvlc_entry & 7) + (tmp & ~(0xFFU << len)));
             sp[1] = u_q;
             u_q = (ui16)((uvlc_entry >> 3) + (tmp >> len)); // u_q
             sp[3] = u_q;
@@ -1089,230 +1417,242 @@ namespace ojph {
       }
 
       // step2 we decode magsgn
+      // mmsbp2 equals K_max + 1 (we decode up to K_max bits + 1 sign bit)
+      // The 32 bit path decode 16 bits data, for which one would think
+      // 16 bits are enough, because we want to put in the center of the
+      // bin.
+      // If you have mmsbp2 equals 16 bit, and reversible coding, and
+      // no bitplanes are missing, then we can decoding using the 16 bit
+      // path, but we are not doing this here.
+      if (mmsbp2 >= 16)
       {
         // We allocate a scratch row for storing v_n values.
         // We have 512 quads horizontally.
-        // We need an extra entry to handle the case of vp[1]
-        // when vp is at the last column.
-        // Here, we allocate 4 instead of 1 to make the buffer size
-        // a multipled of 16 bytes.
-        const int v_n_size = 512 + 4;
-        ui32 v_n_scratch[v_n_size] = {0};  // 2+ kB
+        // We may go beyond the last entry by up to 4 entries.
+        // Here we allocate additional 8 entries.
+        // There are two rows in this structure, the bottom
+        // row is used to store processed entries.
+        const int v_n_size = 512 + 16;
+        ui32 v_n_scratch[2 * v_n_size] = {0}; // 4+ kB
 
         frwd_struct magsgn;
         frwd_init<0xFF>(&magsgn, coded_data, lcup - scup);
 
-        ui16 *sp = scratch;
-        ui32 *vp = v_n_scratch;
-        ui32 *dp = decoded_data;
+        const __m256i avx_mmsbp2 = _mm256_set1_epi32((int)mmsbp2);
 
-        ui32 prev_v_n = 0;
-        for (ui32 x = 0; x < width; sp += 2, ++vp)
         {
-          ui32 inf = sp[0];
-          ui32 U_q = sp[1];
-          if (U_q > mmsbp2)
-            return false;
+          ui16 *sp = scratch;
+          ui32 *vp = v_n_scratch;
+          ui32 *dp = decoded_data;
+          vp[0] = 2; // for easy calculation of emax
 
-          ui32 v_n;
-          ui32 val = 0;
-          ui32 bit = 0;
-          if (inf & (1 << (4 + bit)))
+          for (ui32 x = 0; x < width; x += 4, sp += 4, vp += 2, dp += 4)
           {
-            //get 32 bits of magsgn data
-            ui32 ms_val = frwd_fetch<0xFF>(&magsgn); 
-            ui32 m_n = U_q - ((inf >> (12 + bit)) & 1); // remove e_k
-            frwd_advance(&magsgn, m_n);                 //consume m_n
+            __m128i vn = _mm_set1_epi32(2);
 
-            val = ms_val << 31;                     // get sign bit
-            v_n = ms_val & ((1 << m_n) - 1);        // keep only m_n bits
-            v_n |= ((inf >> (8 + bit)) & 1) << m_n; // add EMB e_1 as MSB
-            v_n |= 1;                               // add center of bin    
-            //v_n now has 2 * (\mu - 1) + 0.5 with correct sign bit
-            //add 2 to make it 2*\mu+0.5, shift it up to missing MSBs
-            val |= (v_n + 2) << (p - 1);
+            __m256i inf_u_q = _mm256_castsi128_si256(_mm_loadl_epi64((__m128i*)sp));
+            inf_u_q = _mm256_permutevar8x32_epi32(inf_u_q, _mm256_setr_epi32(0, 0, 0, 0, 1, 1, 1, 1));
+
+            __m256i U_q = _mm256_srli_epi32(inf_u_q, 16);
+            __m256i w = _mm256_cmpgt_epi32(U_q, avx_mmsbp2);
+            if (!_mm256_testz_si256(w, w)) {
+                return false;
+            }
+
+            __m256i row = decode_two_quad32_avx2(inf_u_q, U_q, &magsgn, p, vn);
+            row = _mm256_permutevar8x32_epi32(row, _mm256_setr_epi32(0, 2, 4, 6, 1, 3, 5, 7));
+            _mm_store_si128((__m128i*)dp, _mm256_castsi256_si128(row));
+            _mm_store_si128((__m128i*)(dp + stride), _mm256_extracti128_si256(row, 0x1));
+
+            __m128i w0 = _mm_cvtsi32_si128(*(int const*)vp);
+            w0 = _mm_or_si128(w0, vn);
+            _mm_storeu_si128((__m128i*)vp, w0);
           }
-          dp[0] = val;
-
-          v_n = 0;
-          val = 0;
-          bit = 1;
-          if (inf & (1 << (4 + bit)))
-          {
-            //get 32 bits of magsgn data
-            ui32 ms_val = frwd_fetch<0xFF>(&magsgn); 
-            ui32 m_n = U_q - ((inf >> (12 + bit)) & 1); // remove e_k
-            frwd_advance(&magsgn, m_n);                 //consume m_n
-
-            val = ms_val << 31;                      // get sign bit
-            v_n = ms_val & ((1 << m_n) - 1);        // keep only m_n bits
-            v_n |= ((inf >> (8 + bit)) & 1) << m_n; // add EMB e_1 as MSB
-            v_n |= 1;                               // add center of bin    
-            //v_n now has 2 * (\mu - 1) + 0.5 with correct sign bit
-            //add 2 to make it 2*\mu+0.5, shift it up to missing MSBs
-            val |= (v_n + 2) << (p - 1);
-          }
-          dp[stride] = val;
-          vp[0] = prev_v_n | v_n;
-          prev_v_n = 0;
-          ++dp;
-          if (++x >= width)
-          { ++vp; break; }
-
-          val = 0;
-          bit = 2;
-          if (inf & (1 << (4 + bit)))
-          {
-            //get 32 bits of magsgn data
-            ui32 ms_val = frwd_fetch<0xFF>(&magsgn); 
-            ui32 m_n = U_q - ((inf >> (12 + bit)) & 1); // remove e_k
-            frwd_advance(&magsgn, m_n);                 //consume m_n
-
-            val = ms_val << 31;                     // get sign bit
-            v_n = ms_val & ((1 << m_n) - 1);        // keep only m_n bits
-            v_n |= ((inf >> (8 + bit)) & 1) << m_n; // add EMB e_1 as MSB
-            v_n |= 1;                               // add center of bin    
-            //v_n now has 2 * (\mu - 1) + 0.5 with correct sign bit
-            //add 2 to make it 2*\mu+0.5, shift it up to missing MSBs
-            val |= (v_n + 2) << (p - 1);
-          }
-          dp[0] = val;
-
-          v_n = 0;
-          val = 0;
-          bit = 3;
-          if (inf & (1 << (4 + bit)))
-          {
-            //get 32 bits of magsgn data
-            ui32 ms_val = frwd_fetch<0xFF>(&magsgn); 
-            ui32 m_n = U_q - ((inf >> (12 + bit)) & 1); // remove e_k
-            frwd_advance(&magsgn, m_n);                 //consume m_n
-
-            val = ms_val << 31;                     // get sign bit
-            v_n = ms_val & ((1 << m_n) - 1);        // keep only m_n bits
-            v_n |= ((inf >> (8 + bit)) & 1) << m_n; // add EMB e_1 as MSB
-            v_n |= 1;                               // add center of bin    
-            //v_n now has 2 * (\mu - 1) + 0.5 with correct sign bit
-            //add 2 to make it 2*\mu+0.5, shift it up to missing MSBs
-            val |= (v_n + 2) << (p - 1);
-          }
-          dp[stride] = val;
-          prev_v_n = v_n;
-          ++dp;
-          ++x;
         }
-        vp[0] = prev_v_n;
 
         for (ui32 y = 2; y < height; y += 2)
         {
-          ui16 *sp = scratch + (y >> 1) * sstr;
-          ui32 *vp = v_n_scratch;
-          ui32 *dp = decoded_data + y * stride;
-
-          prev_v_n = 0;
-          for (ui32 x = 0; x < width; sp += 2, ++vp)
           {
-            ui32 inf = sp[0];
-            ui32 u_q = sp[1];
+            // perform 31 - count_leading_zeros(*vp) here
+            ui32 *vp = v_n_scratch;
+            ui16* sp = scratch + (y >> 1) * sstr;
 
-            ui32 gamma = inf & 0xF0; gamma &= gamma - 0x10; //is gamma_q 1?
-            ui32 emax = vp[0] | vp[1];
-            emax = 31 - count_leading_zeros(emax | 2); // emax - 1            
-            ui32 kappa = gamma ? emax : 1;
+            const __m256i avx_31 = _mm256_set1_epi32(31);
+            const __m256i avx_f0 = _mm256_set1_epi32(0xF0);
+            const __m256i avx_1 = _mm256_set1_epi32(1);
+            const __m256i avx_0 = _mm256_setzero_si256();
 
-            ui32 U_q = u_q + kappa;
-            if (U_q > mmsbp2)
-              return false;
+            for (ui32 x = 0; x <= width; x += 16, vp += 8, sp += 16) {
+              __m256i v = _mm256_loadu_si256((__m256i*)vp);
+              __m256i v_p1 = _mm256_loadu_si256((__m256i*)(vp + 1));
+              v = _mm256_or_si256(v, v_p1);
+              v = avx2_lzcnt_epi32(v);
+              v = _mm256_sub_epi32(avx_31, v);
 
-            ui32 v_n;
-            ui32 val = 0;
-            ui32 bit = 0;
-            if (inf & (1 << (4 + bit)))
-            {
-              //get 32 bits of magsgn data
-              ui32 ms_val = frwd_fetch<0xFF>(&magsgn); 
-              ui32 m_n = U_q - ((inf >> (12 + bit)) & 1); // remove e_k
-              frwd_advance(&magsgn, m_n);                 //consume m_n
+              __m256i inf_u_q = _mm256_loadu_si256((__m256i*)sp);
+              __m256i gamma = _mm256_and_si256(inf_u_q, avx_f0);
+              __m256i w0 = _mm256_sub_epi32(gamma, avx_1);
+              gamma = _mm256_and_si256(gamma, w0);
+              gamma = _mm256_cmpeq_epi32(gamma, avx_0);
 
-              val = ms_val << 31;                     // get sign bit
-              v_n = ms_val & ((1 << m_n) - 1);        // keep only m_n bits
-              v_n |= ((inf >> (8 + bit)) & 1) << m_n; // add EMB e_1 as MSB
-              v_n |= 1;                               // add center of bin    
-              //v_n now has 2 * (\mu - 1) + 0.5 with correct sign bit
-              //add 2 to make it 2*\mu+0.5, shift it up to missing MSBs
-              val |= (v_n + 2) << (p - 1);
+              v = _mm256_andnot_si256(gamma, v);
+              v = _mm256_max_epi32(v, avx_1);
+
+              inf_u_q = _mm256_srli_epi32(inf_u_q, 16);
+              v = _mm256_add_epi32(inf_u_q, v);
+
+              w0 = _mm256_cmpgt_epi32(v, avx_mmsbp2);
+              if (!_mm256_testz_si256(w0, w0)) {
+                  return false;
+              }
+
+              _mm256_storeu_si256((__m256i*)(vp + v_n_size), v);
             }
-            dp[0] = val;
-
-            v_n = 0;
-            val = 0;
-            bit = 1;
-            if (inf & (1 << (4 + bit)))
-            {
-              //get 32 bits of magsgn data
-              ui32 ms_val = frwd_fetch<0xFF>(&magsgn); 
-              ui32 m_n = U_q - ((inf >> (12 + bit)) & 1); // remove e_k
-              frwd_advance(&magsgn, m_n);                 //consume m_n
-
-              val = ms_val << 31;                     // get sign bit
-              v_n = ms_val & ((1 << m_n) - 1);        // keep only m_n bits
-              v_n |= ((inf >> (8 + bit)) & 1) << m_n; // add EMB e_1 as MSB
-              v_n |= 1;                               // add center of bin    
-              //v_n now has 2 * (\mu - 1) + 0.5 with correct sign bit
-              //add 2 to make it 2*\mu+0.5, shift it up to missing MSBs
-              val |= (v_n + 2) << (p - 1);
-            }
-            dp[stride] = val;
-            vp[0] = prev_v_n | v_n;
-            prev_v_n = 0;
-            ++dp;
-            if (++x >= width)
-            { ++vp; break; }
-
-            val = 0;
-            bit = 2;
-            if (inf & (1 << (4 + bit)))
-            {
-              //get 32 bits of magsgn data
-              ui32 ms_val = frwd_fetch<0xFF>(&magsgn); 
-              ui32 m_n = U_q - ((inf >> (12 + bit)) & 1); // remove e_k
-              frwd_advance(&magsgn, m_n);                 //consume m_n
-
-              val = ms_val << 31;                     // get sign bit
-              v_n = ms_val & ((1 << m_n) - 1);        // keep only m_n bits
-              v_n |= ((inf >> (8 + bit)) & 1) << m_n; // add EMB e_1 as MSB
-              v_n |= 1;                               // add center of bin    
-              //v_n now has 2 * (\mu - 1) + 0.5 with correct sign bit
-              //add 2 to make it 2*\mu+0.5, shift it up to missing MSBs
-              val |= (v_n + 2) << (p - 1);
-            }
-            dp[0] = val;
-
-            v_n = 0;
-            val = 0;
-            bit = 3;
-            if (inf & (1 << (4 + bit)))
-            {
-              //get 32 bits of magsgn data
-              ui32 ms_val = frwd_fetch<0xFF>(&magsgn); 
-              ui32 m_n = U_q - ((inf >> (12 + bit)) & 1); // remove e_k
-              frwd_advance(&magsgn, m_n);                 //consume m_n
-
-              val = ms_val << 31;                     // get sign bit
-              v_n = ms_val & ((1 << m_n) - 1);        // keep only m_n bits
-              v_n |= ((inf >> (8 + bit)) & 1) << m_n; // add EMB e_1 as MSB
-              v_n |= 1;                               // add center of bin    
-              //v_n now has 2 * (\mu - 1) + 0.5 with correct sign bit
-              //add 2 to make it 2*\mu+0.5, shift it up to missing MSBs
-              val |= (v_n + 2) << (p - 1);
-            }
-            dp[stride] = val;
-            prev_v_n = v_n;
-            ++dp;
-            ++x;
           }
-          vp[0] = prev_v_n;
+
+          ui32 *vp = v_n_scratch;
+          ui16 *sp = scratch + (y >> 1) * sstr;
+          ui32 *dp = decoded_data + y * stride;
+          vp[0] = 2; // for easy calculation of emax
+
+          for (ui32 x = 0; x < width; x += 4, sp += 4, vp += 2, dp += 4) {
+            //process two quads
+            __m128i vn = _mm_set1_epi32(2);
+
+            __m256i inf_u_q = _mm256_castsi128_si256(_mm_loadl_epi64((__m128i*)sp));
+            inf_u_q = _mm256_permutevar8x32_epi32(inf_u_q, _mm256_setr_epi32(0, 0, 0, 0, 1, 1, 1, 1));
+
+            __m256i U_q = _mm256_castsi128_si256(_mm_loadl_epi64((__m128i*)(vp + v_n_size)));
+            U_q = _mm256_permutevar8x32_epi32(U_q, _mm256_setr_epi32(0, 0, 0, 0, 1, 1, 1, 1));
+
+            __m256i row = decode_two_quad32_avx2(inf_u_q, U_q,  &magsgn, p, vn);
+            row = _mm256_permutevar8x32_epi32(row, _mm256_setr_epi32(0, 2, 4, 6, 1, 3, 5, 7));
+            _mm_store_si128((__m128i*)dp, _mm256_castsi256_si128(row));
+            _mm_store_si128((__m128i*)(dp + stride), _mm256_extracti128_si256(row, 0x1));
+
+            __m128i w0 = _mm_cvtsi32_si128(*(int const*)vp);
+            w0 = _mm_or_si128(w0, vn);
+            _mm_storeu_si128((__m128i*)vp, w0);
+          }
         }
+      }
+      else {
+
+        // reduce bitplane by 16 because we now have 16 bits instead of 32
+        p -= 16;
+
+        // We allocate a scratch row for storing v_n values.
+        // We have 512 quads horizontally.
+        // We may go beyond the last entry by up to 8 entries.
+        // Therefore we allocate additional 8 entries.
+        // There are two rows in this structure, the bottom
+        // row is used to store processed entries.
+        const int v_n_size = 512 + 16;
+        ui16 v_n_scratch[v_n_size] = {0}; // 1+ kB
+        ui32 v_n_scratch_32[v_n_size] = {0}; // 2+ kB
+
+        frwd_struct magsgn;
+        frwd_init<0xFF>(&magsgn, coded_data, lcup - scup);
+
+        {
+          ui16 *sp = scratch;
+          ui16 *vp = v_n_scratch;
+          ui32 *dp = decoded_data;
+          vp[0] = 2; // for easy calculation of emax
+
+          for (ui32 x = 0; x < width; x += 8, sp += 8, vp += 4, dp += 8) {
+              ////process four quads
+              __m128i inf_u_q = _mm_loadu_si128((__m128i*)sp);
+              __m128i U_q = _mm_srli_epi32(inf_u_q, 16);
+              __m128i w = _mm_cmpgt_epi32(U_q, _mm_set1_epi32((int)mmsbp2));
+              if (!_mm_testz_si128(w, w)) {
+                  return false;
+              }
+
+              __m128i vn = _mm_set1_epi16(2);
+              __m256i row = decode_four_quad16(inf_u_q, U_q, &magsgn, p, vn);
+
+              w = _mm_cvtsi32_si128(*(unsigned short const*)(vp));
+              _mm_storeu_si128((__m128i*)vp, _mm_or_si128(w, vn));
+
+              __m256i  w0 = _mm256_shuffle_epi8(row, _mm256_set_epi16(0x0D0C, -1, 0x0908, -1, 0x0504, -1, 0x0100, -1, 0x0D0C, -1, 0x0908, -1, 0x0504, -1, 0x0100, -1));
+              __m256i  w1 = _mm256_shuffle_epi8(row, _mm256_set_epi16(0x0F0E, -1, 0x0B0A, -1, 0x0706, -1, 0x0302, -1, 0x0F0E, -1, 0x0B0A, -1, 0x0706, -1, 0x0302, -1));
+
+              _mm256_storeu_si256((__m256i*)dp, w0);
+              _mm256_storeu_si256((__m256i*)(dp + stride), w1);
+          }
+        }
+
+        for (ui32 y = 2; y < height; y += 2) {
+          {
+            // perform 15 - count_leading_zeros(*vp) here
+            ui16 *vp = v_n_scratch;
+            ui32 *vp_32 = v_n_scratch_32;
+
+            ui16* sp = scratch + (y >> 1) * sstr;
+            const __m256i avx_mmsbp2 = _mm256_set1_epi32((int)mmsbp2);
+            const __m256i avx_31 = _mm256_set1_epi32(31);
+            const __m256i avx_f0 = _mm256_set1_epi32(0xF0);
+            const __m256i avx_1 = _mm256_set1_epi32(1);
+            const __m256i avx_0 = _mm256_setzero_si256();
+
+            for (ui32 x = 0; x <= width; x += 16, vp += 8, sp += 16, vp_32 += 8) {
+              __m128i v = _mm_loadu_si128((__m128i*)vp);
+              __m128i v_p1 = _mm_loadu_si128((__m128i*)(vp + 1));
+              v = _mm_or_si128(v, v_p1);
+
+              __m256i v_avx = _mm256_cvtepu16_epi32(v);
+              v_avx = avx2_lzcnt_epi32(v_avx);
+              v_avx = _mm256_sub_epi32(avx_31, v_avx);
+
+              __m256i inf_u_q = _mm256_loadu_si256((__m256i*)sp);
+              __m256i gamma = _mm256_and_si256(inf_u_q, avx_f0);
+              __m256i w0 = _mm256_sub_epi32(gamma, avx_1);
+              gamma = _mm256_and_si256(gamma, w0);
+              gamma = _mm256_cmpeq_epi32(gamma, avx_0);
+
+              v_avx = _mm256_andnot_si256(gamma, v_avx);
+              v_avx = _mm256_max_epi32(v_avx, avx_1);
+
+              inf_u_q = _mm256_srli_epi32(inf_u_q, 16);
+              v_avx = _mm256_add_epi32(inf_u_q, v_avx);
+
+              w0 = _mm256_cmpgt_epi32(v_avx, avx_mmsbp2);
+              if (!_mm256_testz_si256(w0, w0)) {
+                  return false;
+              }
+
+              _mm256_storeu_si256((__m256i*)vp_32, v_avx);
+            }
+          }
+
+          ui16 *vp = v_n_scratch;
+          ui32* vp_32 = v_n_scratch_32;
+          ui16 *sp = scratch + (y >> 1) * sstr;
+          ui32 *dp = decoded_data + y * stride;
+          vp[0] = 2; // for easy calculation of emax
+
+          for (ui32 x = 0; x < width; x += 8, sp += 8, vp += 4, dp += 8, vp_32 += 4) {
+            ////process four quads
+              __m128i inf_u_q = _mm_loadu_si128((__m128i*)sp);
+              __m128i U_q = _mm_loadu_si128((__m128i*)vp_32);
+
+            __m128i vn = _mm_set1_epi16(2);
+            __m256i row = decode_four_quad16(inf_u_q, U_q, &magsgn, p, vn);
+
+            __m128i w = _mm_cvtsi32_si128(*(unsigned short const*)(vp));
+            _mm_storeu_si128((__m128i*)vp, _mm_or_si128(w, vn));
+
+            __m256i  w0 = _mm256_shuffle_epi8(row, _mm256_set_epi16(0x0D0C, -1, 0x0908, -1, 0x0504, -1, 0x0100, -1, 0x0D0C, -1, 0x0908, -1, 0x0504, -1, 0x0100, -1));
+            __m256i  w1 = _mm256_shuffle_epi8(row, _mm256_set_epi16(0x0F0E, -1, 0x0B0A, -1, 0x0706, -1, 0x0302, -1, 0x0F0E, -1, 0x0B0A, -1, 0x0706, -1, 0x0302, -1));
+
+            _mm256_storeu_si256((__m256i*)dp, w0);
+            _mm256_storeu_si256((__m256i*)(dp + stride), w1);
+          }
+        }
+
+        // increase bitplane back by 16 because we need to process 32 bits
+        p += 16;
       }
 
       if (num_passes > 1)
@@ -1332,25 +1672,45 @@ namespace ojph {
         // each 4 consequtive bits represent one column of 4 rows
         {
           ui32 y;
+
+          const __m128i mask_3 = _mm_set1_epi32(0x30);
+          const __m128i mask_C = _mm_set1_epi32(0xC0);
+          const __m128i shuffle_mask = _mm_set_epi32(-1, -1, -1, 0x0C080400);
           for (y = 0; y < height; y += 4)
           {
             ui16* sp = scratch + (y >> 1) * sstr;
             ui16* dp = sigma + (y >> 2) * mstr;
-            for (ui32 x = 0; x < width; x += 4, sp += 4, ++dp) {
-              ui32 t0 = 0, t1 = 0;
-              t0  = ((sp[0     ] & 0x30u) >> 4)  | ((sp[0     ] & 0xC0u) >> 2);
-              t0 |= ((sp[2     ] & 0x30u) << 4)  | ((sp[2     ] & 0xC0u) << 6);
-              t1  = ((sp[0+sstr] & 0x30u) >> 2)  | ((sp[0+sstr] & 0xC0u)     );
-              t1 |= ((sp[2+sstr] & 0x30u) << 6)  | ((sp[2+sstr] & 0xC0u) << 8);
-              dp[0] = (ui16)(t0 | t1);
+            for (ui32 x = 0; x < width; x += 8, sp += 8, dp += 2)
+            {
+              __m128i s0, s1, u3, uC, t0, t1;
+
+              s0 = _mm_loadu_si128((__m128i*)(sp));
+              u3 = _mm_and_si128(s0, mask_3);
+              u3 = _mm_srli_epi32(u3, 4);
+              uC = _mm_and_si128(s0, mask_C);
+              uC = _mm_srli_epi32(uC, 2);
+              t0 = _mm_or_si128(u3, uC);
+
+              s1 = _mm_loadu_si128((__m128i*)(sp + sstr));
+              u3 = _mm_and_si128(s1, mask_3);
+              u3 = _mm_srli_epi32(u3, 2);
+              uC = _mm_and_si128(s1, mask_C);
+              t1 = _mm_or_si128(u3, uC);
+
+              __m128i r = _mm_or_si128(t0, t1);
+              r = _mm_shuffle_epi8(r, shuffle_mask);
+
+              // _mm_storeu_si32 is not defined, so we use this workaround
+              _mm_store_ss((float*)dp, _mm_castsi128_ps(r));
             }
             dp[0] = 0; // set an extra entry on the right with 0
           }
           {
             // reset one row after the codeblock
             ui16* dp = sigma + (y >> 2) * mstr;
-            for (ui32 x = 0; x < width; x += 4, ++dp)
-              dp[0] = 0;
+            __m128i zero = _mm_setzero_si128();
+            for (ui32 x = 0; x < width; x += 32, dp += 8)
+              _mm_store_si128((__m128i*)dp, zero);
             dp[0] = 0; // set an extra entry on the right with 0
           }
         }
@@ -1389,7 +1749,7 @@ namespace ojph {
             ui16 *prev_sig = prev_row_sig;
             ui16 *cur_sig = sigma + (y >> 2) * mstr;
             ui32 *dpp = decoded_data + y * stride;
-            for (ui32 x = 0; x < width; x += 4, ++cur_sig, ++prev_sig)
+            for (ui32 x = 0; x < width; x += 4, dpp += 4, ++cur_sig, ++prev_sig)
             {
               // only rows and columns inside the stripe are included
               si32 s = (si32)x + 4 - (si32)width;
@@ -1434,7 +1794,8 @@ namespace ojph {
               ui32 new_sig = mbr;
               if (new_sig)
               {
-                ui32 cwd = frwd_fetch<0>(&sigprop);
+                __m128i cwd_vec = frwd_fetch<0>(&sigprop);
+                ui32 cwd = (ui32)_mm_extract_epi16(cwd_vec, 0);
 
                 ui32 cnt = 0;
                 ui32 col_mask = 0xFu;
@@ -1496,48 +1857,73 @@ namespace ojph {
 
                 if (new_sig)
                 {
-                  // new_sig has newly-discovered sig. samples during SPP
-                  // find the signs and update decoded_data
-                  ui32 *dp = dpp + x;
-                  ui32 val = 3u << (p - 2);
-                  col_mask = 0xFu;
-                  for (int i = 0; i < 4; ++i, ++dp, col_mask <<= 4)
-                  {
-                    if ((col_mask & new_sig) == 0)
-                      continue;
+                  cwd |= (ui32)_mm_extract_epi16(cwd_vec, 1) << (16 - cnt);
 
-                    //scan 4 signs
-                    ui32 sample_mask = 0x1111u & col_mask;
-                    if (new_sig & sample_mask)
-                    {
-                      assert(dp[0] == 0);
-                      dp[0] = (cwd << 31) | val;
-                      cwd >>= 1; ++cnt;
-                    }
+                  // Spread new_sig, such that each bit is in one byte with a
+                  // value of 0 if new_sig bit is 0, and 0xFF if new_sig is 1
+                  __m128i new_sig_vec = _mm_set1_epi16((si16)new_sig);
+                  new_sig_vec = _mm_shuffle_epi8(new_sig_vec,
+                    _mm_set_epi8(1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0));
+                  new_sig_vec = _mm_and_si128(new_sig_vec,
+                    _mm_set1_epi64x((si64)0x8040201008040201));
+                  new_sig_vec = _mm_cmpeq_epi8(new_sig_vec,
+                    _mm_set1_epi64x((si64)0x8040201008040201));
 
-                    sample_mask += sample_mask;
-                    if (new_sig & sample_mask)
-                    {
-                      assert(dp[stride] == 0);
-                      dp[stride] = (cwd << 31) | val;
-                      cwd >>= 1; ++cnt;
-                    }
+                  // find cumulative sums
+                  // to find which bit in cwd we should extract
+                  __m128i inc_sum = new_sig_vec; // inclusive scan
+                  inc_sum = _mm_abs_epi8(inc_sum); // cvrt to 0 or 1
+                  inc_sum = _mm_add_epi8(inc_sum, _mm_bslli_si128(inc_sum, 1));
+                  inc_sum = _mm_add_epi8(inc_sum, _mm_bslli_si128(inc_sum, 2));
+                  inc_sum = _mm_add_epi8(inc_sum, _mm_bslli_si128(inc_sum, 4));
+                  inc_sum = _mm_add_epi8(inc_sum, _mm_bslli_si128(inc_sum, 8));
+                  cnt += (ui32)_mm_extract_epi16(inc_sum, 7) >> 8;
+                  // exclusive scan
+                  __m128i ex_sum = _mm_bslli_si128(inc_sum, 1);
 
-                    sample_mask += sample_mask;
-                    if (new_sig & sample_mask)
-                    {
-                      assert(dp[2 * stride] == 0);
-                      dp[2 * stride] = (cwd << 31) | val;
-                      cwd >>= 1; ++cnt;
-                    }
+                  // Spread cwd, such that each bit is in one byte
+                  // with a value of 0 or 1.
+                  cwd_vec = _mm_set1_epi16((si16)cwd);
+                  cwd_vec = _mm_shuffle_epi8(cwd_vec,
+                    _mm_set_epi8(1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0));
+                  cwd_vec = _mm_and_si128(cwd_vec,
+                    _mm_set1_epi64x((si64)0x8040201008040201));
+                  cwd_vec = _mm_cmpeq_epi8(cwd_vec,
+                    _mm_set1_epi64x((si64)0x8040201008040201));
+                  cwd_vec = _mm_abs_epi8(cwd_vec);
 
-                    sample_mask += sample_mask;
-                    if (new_sig & sample_mask)
-                    {
-                      assert(dp[3 * stride] == 0);
-                      dp[3 * stride] = (cwd << 31) | val;
-                      cwd >>= 1; ++cnt;
-                    }
+                  // Obtain bit from cwd_vec correspondig to ex_sum
+                  // Basically, collect needed bits from cwd_vec
+                  __m128i v = _mm_shuffle_epi8(cwd_vec, ex_sum);
+
+                  // load data and set spp coefficients
+                  __m128i m =
+                    _mm_set_epi8(-1,-1,-1,12,-1,-1,-1,8,-1,-1,-1,4,-1,-1,-1,0);
+                  __m128i val = _mm_set1_epi32(3 << (p - 2));
+                  ui32 *dp = dpp;
+                  for (int c = 0; c < 4; ++ c) {
+                    __m128i s0, s0_ns, s0_val;
+                    // load coefficients
+                    s0 = _mm_load_si128((__m128i*)dp);
+
+                    // epi32 is -1 only for coefficient that
+                    // are changed during the SPP
+                    s0_ns = _mm_shuffle_epi8(new_sig_vec, m);
+                    s0_ns = _mm_cmpeq_epi32(s0_ns, _mm_set1_epi32(0xFF));
+
+                    // obtain sign for coefficients in SPP
+                    s0_val = _mm_shuffle_epi8(v, m);
+                    s0_val = _mm_slli_epi32(s0_val, 31);
+                    s0_val = _mm_or_si128(s0_val, val);
+                    s0_val = _mm_and_si128(s0_val, s0_ns);
+
+                    // update vector
+                    s0 = _mm_or_si128(s0, s0_val);
+                    // store coefficients
+                    _mm_store_si128((__m128i*)dp, s0);
+                    // prepare for next row
+                    dp += stride;
+                    m = _mm_add_epi32(m, _mm_set1_epi32(1));
                   }
                 }
                 frwd_advance(&sigprop, cnt);
@@ -1566,50 +1952,89 @@ namespace ojph {
 
           for (ui32 y = 0; y < height; y += 4)
           {
-            ui32 *cur_sig = (ui32*)(sigma + (y >> 2) * mstr);
+            ui16 *cur_sig = sigma + (y >> 2) * mstr;
             ui32 *dpp = decoded_data + y * stride;
-            ui32 half = 1 << (p - 2);
-            for (ui32 i = 0; i < width; i += 8)
+            for (ui32 i = 0; i < width; i += 4, dpp += 4)
             {
               //Process one entry from sigma array at a time
               // Each nibble (4 bits) in the sigma array represents 4 rows,
-              // and the 32 bits contain 8 columns
               ui32 cwd = rev_fetch_mrp(&magref); // get 32 bit data
-              ui32 sig = *cur_sig++; // 32 bit that will be processed now
-              ui32 col_mask = 0xFu;  // a mask for a column in sig
+              ui16 sig = *cur_sig++; // 16 bit that will be processed now
+              int total_bits = 0;
               if (sig) // if any of the 32 bits are set
               {
-                for (int j = 0; j < 8; ++j) //one column at a time
-                {
-                  if (sig & col_mask) // lowest nibble
-                  {
-                    ui32 *dp = dpp + i + j; // next column in decoded samples
-                    ui32 sample_mask = 0x11111111u & col_mask; //LSB
+                // We work on 4 rows, with 4 samples each, since
+                // data is 32 bit (4 bytes)
 
-                    for (int k = 0; k < 4; ++k) {
-                      if (sig & sample_mask) //if LSB is set
-                      {
-                        assert(dp[0] != 0); // decoded value cannot be zero
-                        assert((dp[0] & half) == 0); // no half
-                        ui32 sym = cwd & 1;          // get it value
-                        sym = (1 - sym) << (p - 1); // previous center of bin
-                        sym |= half;            // put half the center of bin
-                        dp[0] ^= sym;    // remove old bin center and put new
-                        cwd >>= 1;       // consume word
-                      }
-                      sample_mask += sample_mask; //next row
-                      dp += stride; // next samples row
-                    }
-                  }
-                  col_mask <<= 4; //next column
+                // spread the 16 bits in sig to 0 or 1 bytes in sig_vec
+                __m128i sig_vec = _mm_set1_epi16((si16)sig);
+                sig_vec = _mm_shuffle_epi8(sig_vec,
+                  _mm_set_epi8(1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0));
+                sig_vec = _mm_and_si128(sig_vec,
+                  _mm_set1_epi64x((si64)0x8040201008040201));
+                sig_vec = _mm_cmpeq_epi8(sig_vec,
+                  _mm_set1_epi64x((si64)0x8040201008040201));
+                sig_vec = _mm_abs_epi8(sig_vec);
+
+                // find cumulative sums
+                // to find which bit in cwd we should extract
+                __m128i inc_sum = sig_vec; // inclusive scan
+                inc_sum = _mm_add_epi8(inc_sum, _mm_bslli_si128(inc_sum, 1));
+                inc_sum = _mm_add_epi8(inc_sum, _mm_bslli_si128(inc_sum, 2));
+                inc_sum = _mm_add_epi8(inc_sum, _mm_bslli_si128(inc_sum, 4));
+                inc_sum = _mm_add_epi8(inc_sum, _mm_bslli_si128(inc_sum, 8));
+                total_bits = _mm_extract_epi16(inc_sum, 7) >> 8;
+                __m128i ex_sum = _mm_bslli_si128(inc_sum, 1); // exclusive scan
+
+                // Spread the 16 bits in cwd to inverted 0 or 1 bytes in
+                // cwd_vec. Then, convert these to a form suitable
+                // for coefficient modifications; in particular, a value
+                // of 0 is presented as binary 11, and a value of 1 is
+                // represented as binary 01
+                __m128i cwd_vec = _mm_set1_epi16((si16)cwd);
+                cwd_vec = _mm_shuffle_epi8(cwd_vec,
+                  _mm_set_epi8(1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0));
+                cwd_vec = _mm_and_si128(cwd_vec,
+                  _mm_set1_epi64x((si64)0x8040201008040201));
+                cwd_vec = _mm_cmpeq_epi8(cwd_vec,
+                  _mm_set1_epi64x((si64)0x8040201008040201));
+                cwd_vec = _mm_add_epi8(cwd_vec, _mm_set1_epi8(1));
+                cwd_vec = _mm_add_epi8(cwd_vec, cwd_vec);
+                cwd_vec = _mm_or_si128(cwd_vec, _mm_set1_epi8(1));
+
+                // load data and insert the mrp bit
+                __m128i m =
+                  _mm_set_epi8(-1,-1,-1,12,-1,-1,-1,8,-1,-1,-1,4,-1,-1,-1,0);
+                ui32 *dp = dpp;
+                for (int c = 0; c < 4; ++c) {
+                  __m128i s0, s0_sig, s0_idx, s0_val;
+                  // load coefficients
+                  s0 = _mm_load_si128((__m128i*)dp);
+                  // find significant samples in this row
+                  s0_sig = _mm_shuffle_epi8(sig_vec, m);
+                  s0_sig = _mm_cmpeq_epi8(s0_sig, _mm_setzero_si128());
+                  // get MRP bit index, and MRP pattern
+                  s0_idx = _mm_shuffle_epi8(ex_sum, m);
+                  s0_val = _mm_shuffle_epi8(cwd_vec, s0_idx);
+                  // keep data from significant samples only
+                  s0_val = _mm_andnot_si128(s0_sig, s0_val);
+                  // move mrp bits to correct position, and employ
+                  s0_val = _mm_slli_epi32(s0_val, (si32)p - 2);
+                  s0 = _mm_xor_si128(s0, s0_val);
+                  // store coefficients
+                  _mm_store_si128((__m128i*)dp, s0);
+                  // prepare for next row
+                  dp += stride;
+                  m = _mm_add_epi32(m, _mm_set1_epi32(1));
                 }
               }
               // consume data according to the number of bits set
-              rev_advance_mrp(&magref, population_count(sig));
+              rev_advance_mrp(&magref, (ui32)total_bits);
             }
           }
         }
       }
+
       return true;
     }
   }

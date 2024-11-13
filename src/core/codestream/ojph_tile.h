@@ -47,7 +47,7 @@ namespace ojph {
 
   ////////////////////////////////////////////////////////////////////////////
   //defined elsewhere
-  struct line_buf;
+  class line_buf;
   class codestream;
 
   namespace local {
@@ -89,6 +89,7 @@ namespace ojph {
       ui32 *num_bits;
       bool *is_signed;
       ui32 *cur_line;
+      bool *nlt_type3;
       int prog_order;
 
     private:

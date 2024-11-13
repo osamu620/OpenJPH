@@ -138,6 +138,7 @@ namespace ojph {
       COM = 0xFF64, //comment
       DFS = 0xFF72, //downsampling factor styles
       ADS = 0xFF73, //arbitrary decomposition styles
+      NLT = 0xFF76, //non-linearity point transformation
       ATK = 0xFF79, //arbitrary transformation kernels
       SOT = 0xFF90, //start of tile-part
       SOP = 0xFF91, //start of packet
@@ -166,12 +167,25 @@ namespace ojph {
       friend ::ojph::param_siz;
 
     public:
+      enum : ui16 {
+        RSIZ_NLT_FLAG  =  0x200,
+        RSIZ_HT_FLAG   = 0x4000,
+        RSIZ_EXT_FLAG  = 0x8000,
+      };
+
+    public:
       param_siz()
       {
-        memset(this, 0, sizeof(param_siz));
+        Lsiz = Csiz = 0;        
+        Xsiz = Ysiz = XOsiz = YOsiz = XTsiz = YTsiz = XTOsiz = YTOsiz = 0;
+        skipped_resolutions = 0;
+        memset(store, 0, sizeof(store));
+        ws_kern_support_needed = dfs_support_needed = false;
+        cod = NULL;
+        dfs = NULL;
+        Rsiz = RSIZ_HT_FLAG;
         cptr = store;
         old_Csiz = 4;
-        Rsiz = 0x4000; //for jph, bit 14 of Rsiz is 1
       }
 
       ~param_siz()
@@ -255,6 +269,7 @@ namespace ojph {
         ui32 t = ojph_div_ceil(Xsiz, ds) - ojph_div_ceil(XOsiz, ds);
         return t;
       }
+      
       ui32 get_height(ui32 comp_num) const
       {
         assert(comp_num < get_num_components());
@@ -272,6 +287,11 @@ namespace ojph {
 
       bool is_ws_kern_support_needed() { return ws_kern_support_needed; }
       bool is_dfs_support_needed() { return dfs_support_needed; }
+
+      void set_Rsiz_flag(ui16 flag)
+      { Rsiz |= flag; }
+      void reset_Rsiz_flag(ui16 flag)
+      { Rsiz = (ui16)(Rsiz & ~flag); }
 
     private:
       ui16 Lsiz;
@@ -504,6 +524,9 @@ namespace ojph {
       }
 
       ////////////////////////////////////////
+      ui32 propose_implementation_precision(const param_siz* siz) const;
+
+      ////////////////////////////////////////
       bool write(outfile_base *file);
 
       ////////////////////////////////////////
@@ -626,7 +649,11 @@ namespace ojph {
                          bool is_employing_color_transform);
       void set_irrev_quant(ui32 num_decomps);
 
-    protected:
+      ui8 decode_SPqcd(ui8 v) const
+      { return (ui8)(v >> 3); }
+      ui8 encode_SPqcd(ui8 v) const
+      { return (ui8)(v << 3); }
+   protected:
       ui16 Lqcd;
       ui8 Sqcd;
       union
@@ -657,6 +684,64 @@ namespace ojph {
 
     protected:
         ui16 comp_idx;
+    };
+
+    ///////////////////////////////////////////////////////////////////////////
+    //
+    //
+    //
+    //
+    //
+    ///////////////////////////////////////////////////////////////////////////
+    // data structures used by param_nlt
+    struct param_nlt
+    {
+      using special_comp_num = ojph::param_nlt::special_comp_num;
+    public:
+      param_nlt() { 
+        Lnlt = 6;
+        Cnlt = special_comp_num::ALL_COMPS; // default
+        BDnlt = 0;
+        Tnlt = 3;
+        enabled = false; next = NULL; alloced_next = false;
+      }
+
+      ~param_nlt() {
+        if (next && alloced_next) {
+          delete next;
+          alloced_next = false;
+          next = NULL;
+        }
+      }
+
+      void check_validity(param_siz& siz);
+      void set_type3_transformation(ui32 comp_num, bool enable);
+      bool get_type3_transformation(ui32 comp_num, ui8& bit_depth, 
+                                    bool& is_signed) const;
+      bool write(outfile_base* file) const;
+      void read(infile_base* file);
+
+    private:
+      const param_nlt* get_comp_object(ui32 comp_num) const;
+      param_nlt* get_comp_object(ui32 comp_num);
+      param_nlt* add_object(ui32 comp_num);
+      bool is_any_enabled() const;
+      void trim_non_existing_components(ui32 num_comps);
+
+    private:
+      ui16 Lnlt;         // length of the marker segment excluding marker
+      ui16 Cnlt;         // Component involved in the transformation
+      ui8 BDnlt;         // Decoded image component bit depth parameter
+      ui8 Tnlt;          // Type of non-linearity
+      bool enabled;      // true if this object is used
+      param_nlt* next;   // for chaining NLT markers
+      bool alloced_next; // true if next was allocated, not just set to an
+                         // existing object
+
+      // The top level param_nlt object is not allocated, but as part of 
+      // codestream, and is used to manage allocated next objects.
+      // next holds a list of param_nlt objects, which are managed by the top
+      // param_nlt object.
     };
 
     ///////////////////////////////////////////////////////////////////////////
@@ -792,9 +877,10 @@ namespace ojph {
       };
 
     public: // member functions
-      param_dfs() { memset(this, 0, sizeof(param_dfs)); }
+      param_dfs() { init(); }
       ~param_dfs() { if (next) delete next; }
-      void init() { memset(this, 0, sizeof(param_dfs)); }
+      void init() 
+      { Ldfs = Sdfs = Ids = 0; memset(Ddfs, 0, sizeof(Ddfs)); next = NULL; }
       bool read(infile_base *file);
       bool exists() const { return Ldfs != 0; }
 
@@ -869,8 +955,17 @@ namespace ojph {
       bool read_coefficient(infile_base *file, float &K);
       bool read_coefficient(infile_base *file, si16 &K);
       void init(bool clear_all = true) { 
-        if (clear_all)
-          memset(this, 0, sizeof(param_atk));
+        if (clear_all) 
+        {
+          Latk = Satk = 0;
+          Katk = 0.0f;
+          Natk = 0;
+          d = NULL;
+          max_steps = 0;
+          memset(d_store, 0, sizeof(d_store));
+          next = NULL;
+          alloced_next = false;
+        }
         d = d_store; max_steps = sizeof(d_store) / sizeof(lifting_step);
       }
       void init_irv97();

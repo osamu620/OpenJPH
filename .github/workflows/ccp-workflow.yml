@@ -1,11 +1,16 @@
 # taken from https://github.com/onqtam/doctest/blob/master/.github/workflows/main.yml
 
 name: C/C++ CI
-on: push
+on: 
+  push:
+  pull_request:
+    types: [opened, reopened]
+
 
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include: [
           { system: MacOS,          runner: macos-latest },
@@ -25,6 +30,7 @@ jobs:
 
   build_windows:
     strategy:
+      fail-fast: false
       matrix:
         include: [
           { system: Windows,  runner: windows-latest },
@@ -42,9 +48,11 @@ jobs:
 
   test:
     strategy:
+      fail-fast: false
       matrix:
         include: [
-          { system: MacOS,          runner: macos-latest },
+          { system: MacOS-13,       runner: macos-13 },
+          { system: MacOS-latest,   runner: macos-latest },
           { system: Ubuntu-latest,  runner: ubuntu-latest },
         ]
     name: ${{ matrix.system }} Test
@@ -63,6 +71,7 @@ jobs:
       
   test_windows:
     strategy:
+      fail-fast: false
       matrix:
         include: [
           { system: Windows,  runner: windows-latest },
