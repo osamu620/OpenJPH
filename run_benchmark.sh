@@ -50,7 +50,8 @@ fi
 
 # Version detection
 JPEG_VERSION=$($CJPEG -version 2>&1 | head -1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "unknown")
-OJPH_VERSION=$($OJPH_C -version 2>&1 | head -1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "unknown")
+OJPH_LIB=$(ldd "$OJPH_C" 2>/dev/null | grep openjph | awk '{print $3}')
+OJPH_VERSION=$(strings "$OJPH_LIB" 2>/dev/null | grep -oP 'JPH Ver \K[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
 KDU_VERSION=$($KDU_C -version 2>&1 | grep "version" | head -1 | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "unknown")
 
 extract_kdu_cpu() {
