@@ -59,6 +59,12 @@ accumulator, branchless byte drain, AVX-512 rev_tx_to_cb32.
 | 0.011 | 95      | 2.87     | .0724         | .0659        | 114               | 125             | +10%    |
 | lossless | —    | 9.11     | .1336         | .0969        | 62                | 85              | +28%    |
 
+### Encoding (optimized) — Kakadu lossless comparison
+
+| Mode | OJPH bpp | KDU bpp | OJPH opt (s) | KDU (s) | OJPH opt (MP/s) | KDU (MP/s) | KDU / OJPH |
+|------|----------|---------|--------------|---------|-----------------|------------|------------|
+| lossless | 9.11 | 9.11 | .0969 | .0313 | 85 | 264 | 3.11x |
+
 ### Decoding (optimized)
 
 | Qstep | Qfactor | OJPH bpp | OJPH orig (s) | OJPH opt (s) | OJPH orig (MP/s) | OJPH opt (MP/s) | Speedup |
@@ -71,18 +77,30 @@ accumulator, branchless byte drain, AVX-512 rev_tx_to_cb32.
 | 0.011 | 95      | 2.87     | .0523         | .0533        | 158               | 155             | -2%     |
 | lossless | —    | 9.11     | .0760         | .0750        | 109               | 110             | +1%     |
 
+### Decoding — Kakadu lossless comparison
+
+| Mode | OJPH opt (s) | KDU (s) | OJPH opt (MP/s) | KDU (MP/s) | KDU / OJPH |
+|------|--------------|---------|-----------------|------------|------------|
+| lossless | .0750 | .0558 | 110 | 148 | 1.35x |
+
 ### Summary (updated)
 
 | Metric | JPEG | OJPH (orig) | OJPH (opt) | Kakadu |
 |--------|-----:|------------:|-----------:|-------:|
 | Avg encode throughput (MP/s), lossy | 391 | 158 | 168 | 426 |
-| Avg encode throughput (MP/s), lossless | — | 62 | 85 | — |
-| Avg decode throughput (MP/s) | 319 | 200 | 195 | 247 |
+| Encode throughput (MP/s), lossless | — | 62 | 85 | 264 |
+| Avg decode throughput (MP/s), lossy | 319 | 200 | 195 | 247 |
+| Decode throughput (MP/s), lossless | — | 109 | 110 | 148 |
 
 | Comparison (lossy avg) | Encode | Decode |
 |------------------------|-------:|-------:|
 | Kakadu / OJPH (opt)    | 2.53x  | 1.27x  |
 | Kakadu / OJPH (orig)   | 2.69x  | 1.23x  |
+
+| Comparison (lossless)  | Encode | Decode |
+|------------------------|-------:|-------:|
+| Kakadu / OJPH (opt)    | 3.11x  | 1.35x  |
+| Kakadu / OJPH (orig)   | 4.26x  | 1.36x  |
 
 ### Optimization impact by operating point
 
