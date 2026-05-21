@@ -430,13 +430,13 @@ namespace ojph {
 /////////////////////////////////////////////////////////////////////////
     struct ms_struct {
       //storage
-      ui8* buf;      //pointer to data buffer
-      ui32 pos;      //position of next writing within buf
-      ui32 buf_size; //size of buffer, which we must not exceed
+      ui8* buf;        //pointer to data buffer
+      ui32 pos;        //position of next writing within buf
+      ui32 buf_size;   //size of buffer, which we must not exceed
 
-      int max_bits;  //maximum number of bits that can be store in tmp
-      int used_bits; //number of occupied bits in tmp
-      ui32 tmp;      //temporary storage of coded bits
+      int used_bits;   //number of occupied bits in tmp
+      ui64 tmp;        //temporary storage of coded bits (widened to 64-bit)
+      bool last_was_ff;//true if the last written byte was 0xFF
     };
 
     //////////////////////////////////////////////////////////////////////////
@@ -446,51 +446,65 @@ namespace ojph {
       msp->buf = data;
       msp->pos = 0;
       msp->buf_size = buffer_size;
-      msp->max_bits = 8;
       msp->used_bits = 0;
       msp->tmp = 0;
+      msp->last_was_ff = false;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    static inline void
+    ms_drain(ms_struct* msp)
+    {
+      while (msp->used_bits >= (msp->last_was_ff ? 7 : 8))
+      {
+        int max_bits = msp->last_was_ff ? 7 : 8;
+        ui8 byte = (ui8)(msp->tmp & ((1u << max_bits) - 1));
+        msp->buf[msp->pos++] = byte;
+        msp->tmp >>= max_bits;
+        msp->used_bits -= max_bits;
+        msp->last_was_ff = (byte == 0xFF);
+      }
     }
 
     //////////////////////////////////////////////////////////////////////////
     static inline void
     ms_encode(ms_struct* msp, ui64 cwd, int cwd_len)
     {
-      while (cwd_len > 0)
-      {
-        if (msp->pos >= msp->buf_size)
-          OJPH_ERROR(0x00020005, "magnitude sign encoder's buffer is full");
-        int t = ojph_min(msp->max_bits - msp->used_bits, cwd_len);
-        msp->tmp |= ((ui32)(cwd & ((1U << t) - 1))) << msp->used_bits;
-        msp->used_bits += t;
-        cwd >>= t;
-        cwd_len -= t;
-        if (msp->used_bits >= msp->max_bits)
-        {
-          msp->buf[msp->pos++] = (ui8)msp->tmp;
-          msp->max_bits = (msp->tmp == 0xFF) ? 7 : 8;
-          msp->tmp = 0;
-          msp->used_bits = 0;
-        }
+      int avail = 64 - msp->used_bits;
+      if (likely(cwd_len <= avail)) {
+        msp->tmp |= cwd << msp->used_bits;
+        msp->used_bits += cwd_len;
+      } else {
+        msp->tmp |= (cwd & ((1ULL << avail) - 1)) << msp->used_bits;
+        msp->used_bits = 64;
+        ms_drain(msp);
+        cwd >>= avail;
+        cwd_len -= avail;
+        msp->tmp |= cwd << msp->used_bits;
+        msp->used_bits += cwd_len;
       }
+      ms_drain(msp);
     }
 
     //////////////////////////////////////////////////////////////////////////
     static inline void
     ms_terminate(ms_struct* msp)
     {
+      ms_drain(msp);
       if (msp->used_bits)
       {
-        int t = msp->max_bits - msp->used_bits; //unused bits
-        msp->tmp |= (0xFF & ((1U << t) - 1)) << msp->used_bits;
-        msp->used_bits += t;
-        if (msp->tmp != 0xFF)
+        int max_bits = msp->last_was_ff ? 7 : 8;
+        int t = max_bits - msp->used_bits;
+        ui32 byte = (ui32)(msp->tmp & ((1ULL << msp->used_bits) - 1));
+        byte |= (0xFFu & ((1u << t) - 1)) << msp->used_bits;
+        if (byte != 0xFF)
         {
           if (msp->pos >= msp->buf_size)
             OJPH_ERROR(0x00020006, "magnitude sign encoder's buffer is full");
-          msp->buf[msp->pos++] = (ui8)msp->tmp;
+          msp->buf[msp->pos++] = (ui8)byte;
         }
       }
-      else if (msp->max_bits == 7)
+      else if (msp->last_was_ff)
         msp->pos--;
     }
 
