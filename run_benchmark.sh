@@ -168,7 +168,8 @@ cat > "$OUT_DIR/benchmark_results.md" << MDEOF
 | Threading | All single-threaded (Kakadu: \`-num_threads 0\`) |
 | Timing | JPEG: wall-clock; OpenJPH: internal \`Elapsed time\`; Kakadu: \`End-to-end CPU time\` (\`-cpu 0\`) |
 | Iterations | ${ITERS} runs averaged per data point |
-| Platform | $(uname -s) $(uname -m) |
+| Platform | $(uname -s) $(uname -m), $(grep -m1 "model name" /proc/cpuinfo 2>/dev/null | sed 's/.*: //' || echo "unknown CPU") |
+| SIMD | $(grep -m1 "flags" /proc/cpuinfo 2>/dev/null | grep -oP '\b(sse|sse2|ssse3|sse4_1|sse4_2|avx|avx2|avx512f|avx512cd|avx512bw|avx512vl|neon)\b' | sort -V | tr '\n' ' ' || echo "unknown") |
 
 Both HTJ2K encoders use the same \`Qstep\` value at each operating point,
 producing nearly identical file sizes. JPEG quality is chosen to give

@@ -11,7 +11,8 @@
 | Threading | All single-threaded (Kakadu: `-num_threads 0`) |
 | Timing | JPEG: wall-clock; OpenJPH: internal `Elapsed time`; Kakadu: `End-to-end CPU time` (`-cpu 0`) |
 | Iterations | 10 runs averaged per data point |
-| Platform | Linux x86_64 |
+| Platform | Linux x86_64, AMD Ryzen 9 9950X 16-Core Processor |
+| SIMD | avx avx2 avx512bw avx512cd avx512f avx512vl sse sse2 sse4_1 sse4_2 ssse3 |
 
 Both HTJ2K encoders use the same `Qstep` value at each operating point,
 producing nearly identical file sizes. JPEG quality is chosen to give
