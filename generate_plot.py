@@ -22,9 +22,9 @@ jpeg_enc_ms  = [17.6, 19.2, 20.7, 21.2, 23.6, 27.2]
 ojph_enc_ms  = [35.8, 47.1, 52.1, 59.3, 61.9, 72.4]
 kdu_enc_ms   = [16.6, 18.3, 19.2, 20.3, 20.8, 22.6]
 
-# Optimized OpenJPH encoding
-ojph_opt_enc_mps = [222, 191, 166, 155, 148, 125]
-ojph_opt_enc_ms  = [37.3, 43.2, 49.8, 53.5, 55.7, 65.9]
+# Optimized OpenJPH encoding (internal Elapsed time)
+ojph_opt_enc_mps = [240, 195, 173, 161, 153, 133]
+ojph_opt_enc_ms  = [34.4, 42.3, 47.8, 51.4, 54.2, 61.9]
 
 # Original decoding throughput (MP/s)
 jpeg_dec_mps  = [416, 370, 337, 312, 261, 219]
@@ -36,24 +36,24 @@ jpeg_dec_ms  = [19.9, 22.4, 24.6, 26.5, 31.7, 37.8]
 ojph_dec_ms  = [31.0, 37.4, 42.1, 45.0, 46.6, 52.3]
 kdu_dec_ms   = [28.6, 32.0, 33.3, 34.5, 36.1, 38.5]
 
-# Optimized OpenJPH decoding
-ojph_opt_dec_mps = [259, 208, 195, 182, 174, 155]
-ojph_opt_dec_ms  = [32.0, 39.8, 42.4, 45.5, 47.6, 53.3]
+# Optimized OpenJPH decoding (internal Elapsed time)
+ojph_opt_dec_mps = [278, 224, 207, 193, 184, 161]
+ojph_opt_dec_ms  = [29.8, 37.0, 39.9, 42.9, 44.9, 51.5]
 
 # Lossless data points
 ll_bpp = 9.11
 ojph_ll_enc_orig_mps = 62
-ojph_ll_enc_opt_mps = 85
-kdu_ll_enc_mps = 296
+ojph_ll_enc_opt_mps = 89
+kdu_ll_enc_mps = 301
 ojph_ll_enc_orig_ms = 133.6
-ojph_ll_enc_opt_ms = 96.9
-kdu_ll_enc_ms = 28.0
+ojph_ll_enc_opt_ms = 93.0
+kdu_ll_enc_ms = 27.5
 ojph_ll_dec_orig_mps = 109
-ojph_ll_dec_opt_mps = 110
-kdu_ll_dec_mps = 160
+ojph_ll_dec_opt_mps = 115
+kdu_ll_dec_mps = 163
 ojph_ll_dec_orig_ms = 76.0
-ojph_ll_dec_opt_ms = 75.0
-kdu_ll_dec_ms = 51.6
+ojph_ll_dec_opt_ms = 72.0
+kdu_ll_dec_ms = 51.0
 
 # Colors
 C_JPEG = '#e74c3c'
@@ -81,7 +81,7 @@ ax.plot(kdu_bpp, kdu_enc_mps, '^-', color=C_KDU, label='HTJ2K (Kakadu)', ms=ms, 
 ax.plot(ll_bpp, ojph_ll_enc_orig_mps, 's', color=C_OJPH, ms=ms+2)
 ax.plot(ll_bpp, ojph_ll_enc_opt_mps, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
 ax.plot(ll_bpp, kdu_ll_enc_mps, '^', color=C_KDU, ms=ms+2)
-ax.annotate('+28%', xy=(ll_bpp, ojph_ll_enc_opt_mps),
+ax.annotate('+44%', xy=(ll_bpp, ojph_ll_enc_opt_mps),
             xytext=(ll_bpp - 1.5, ojph_ll_enc_opt_mps + 20),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
@@ -117,7 +117,7 @@ ax.plot(kdu_bpp, kdu_enc_ms, '^-', color=C_KDU, label='HTJ2K (Kakadu)', ms=ms, l
 ax.plot(ll_bpp, ojph_ll_enc_orig_ms, 's', color=C_OJPH, ms=ms+2)
 ax.plot(ll_bpp, ojph_ll_enc_opt_ms, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
 ax.plot(ll_bpp, kdu_ll_enc_ms, '^', color=C_KDU, ms=ms+2)
-ax.annotate('+28%', xy=(ll_bpp, ojph_ll_enc_opt_ms),
+ax.annotate('+44%', xy=(ll_bpp, ojph_ll_enc_opt_ms),
             xytext=(ll_bpp - 1.8, ojph_ll_enc_opt_ms + 12),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
