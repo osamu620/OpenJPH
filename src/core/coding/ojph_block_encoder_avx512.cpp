@@ -455,15 +455,16 @@ namespace ojph {
     static inline void
     ms_drain(ms_struct* msp)
     {
-      while (msp->used_bits >= (msp->last_was_ff ? 7 : 8))
+      int max_bits = 8 - (int)msp->last_was_ff;
+      while (msp->used_bits >= max_bits)
       {
-        int max_bits = msp->last_was_ff ? 7 : 8;
         ui8 byte = (ui8)(msp->tmp & ((1u << max_bits) - 1));
         msp->buf[msp->pos++] = byte;
         msp->tmp >>= max_bits;
         msp->used_bits -= max_bits;
-        msp->last_was_ff = (byte == 0xFF);
+        max_bits = 8 - (int)(byte == 0xFF);
       }
+      msp->last_was_ff = (max_bits == 7);
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -1250,6 +1251,44 @@ void ojph_encode_codeblock_avx512(ui32* buf, ui32 missing_msbs,
 
     coded->avail_size -= lengths[0];
 }
+
+    //////////////////////////////////////////////////////////////////////////
+    void avx512_rev_tx_to_cb32(const void *sp, ui32 *dp, ui32 K_max,
+                               float delta_inv, ui32 count, ui32* max_val)
+    {
+      ojph_unused(delta_inv);
+
+      ui32 shift = 31 - K_max;
+      __m512i m0 = _mm512_set1_epi32(INT_MIN);
+      __m512i tmax = _mm512_castsi256_si512(
+        _mm256_loadu_si256((__m256i*)max_val));
+      const si32 *p = (const si32*)sp;
+      for ( ; count >= 16; count -= 16, p += 16, dp += 16)
+      {
+        __m512i v = _mm512_loadu_si512(p);
+        __m512i sign = _mm512_and_epi32(v, m0);
+        __m512i val = _mm512_abs_epi32(v);
+        val = _mm512_slli_epi32(val, (int)shift);
+        tmax = _mm512_or_epi32(tmax, val);
+        val = _mm512_or_epi32(val, sign);
+        _mm512_storeu_si512((__m512i*)dp, val);
+      }
+      if (count)
+      {
+        __mmask16 msk = (__mmask16)((1u << count) - 1);
+        __m512i v = _mm512_maskz_loadu_epi32(msk, p);
+        __m512i sign = _mm512_and_epi32(v, m0);
+        __m512i val = _mm512_abs_epi32(v);
+        val = _mm512_slli_epi32(val, (int)shift);
+        tmax = _mm512_mask_or_epi32(tmax, msk, tmax, val);
+        val = _mm512_or_epi32(val, sign);
+        _mm512_storeu_si512((__m512i*)dp, val);
+      }
+      __m256i lo = _mm512_castsi512_si256(tmax);
+      __m256i hi = _mm512_extracti64x4_epi64(tmax, 1);
+      lo = _mm256_or_si256(lo, hi);
+      _mm256_storeu_si256((__m256i*)max_val, lo);
+    }
 
 } /* namespace local */
 } /* namespace ojph */
