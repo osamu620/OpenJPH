@@ -155,9 +155,9 @@ namespace ojph {
       #if (defined(OJPH_ARCH_X86_64) && !defined(OJPH_DISABLE_AVX512))
         if (get_cpu_ext_level() >= X86_CPU_EXT_LEVEL_AVX512)
         {
-          // rev_vert_step             = avx512_rev_vert_step;
-          // rev_horz_ana              = avx512_rev_horz_ana;
-          // rev_horz_syn              = avx512_rev_horz_syn;
+          rev_vert_step             = avx512_rev_vert_step;
+          rev_horz_ana              = avx512_rev_horz_ana;
+          rev_horz_syn              = avx512_rev_horz_syn;
 
           irv_vert_step             = avx512_irv_vert_step;
           irv_vert_times_K          = avx512_irv_vert_times_K;

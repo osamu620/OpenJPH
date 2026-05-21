@@ -140,7 +140,7 @@ namespace ojph {
       for (; width > 8; width -= 16, sp += 16, dpl += 8, dph += 8)
       {
         __m512d a = _mm512_load_pd(sp);
-        __m512d b = _mm512_load_pd(sp + 16);
+        __m512d b = _mm512_load_pd(sp + 8);
         __m512d c = _mm512_permutex2var_pd(a, idx1, b);
         __m512d d = _mm512_permutex2var_pd(a, idx2, b);
         _mm512_store_pd(dpl, c);
@@ -178,7 +178,7 @@ namespace ojph {
         __m512d c = _mm512_permutex2var_pd(a, idx1, b);
         __m512d d = _mm512_permutex2var_pd(a, idx2, b);
         _mm512_store_pd(dp, c);
-        _mm512_store_pd(dp + 16, d);
+        _mm512_store_pd(dp + 8, d);
       }
       for (; width > 0; width -= 8, dp += 8, spl += 4, sph += 4)
       {
