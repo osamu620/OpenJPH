@@ -177,22 +177,22 @@ comparable bitrates.
 
 ## Encoding
 
-| Qstep | JPEG bpp | OJPH bpp | KDU bpp | JPEG (s) | OJPH (s) | KDU (s) | JPEG (MP/s) | OJPH (MP/s) | KDU (MP/s) |
-|------:|----------|----------|---------|----------|----------|---------|-------------|-------------|------------|
+| Qstep | Qfactor | JPEG bpp | OJPH bpp | KDU bpp | JPEG (s) | OJPH (s) | KDU (s) | JPEG (MP/s) | OJPH (MP/s) | KDU (MP/s) |
+|------:|--------:|----------|----------|---------|----------|----------|---------|-------------|-------------|------------|
 $(for i in 0 1 2 3 4 5; do
-  printf "| %-5s | %-8s | %-8s | %-7s | %-8s | %-8s | %-7s | %-11s | %-11s | %-10s |\n" \
-    "${QSTEPS[$i]}" "${JPEG_BPP[$i]}" "${OJPH_BPP[$i]}" "${KDU_BPP[$i]}" \
+  printf "| %-5s | %-7s | %-8s | %-8s | %-7s | %-8s | %-8s | %-7s | %-11s | %-11s | %-10s |\n" \
+    "${QSTEPS[$i]}" "${JPEG_Q[$i]}" "${JPEG_BPP[$i]}" "${OJPH_BPP[$i]}" "${KDU_BPP[$i]}" \
     "${JPEG_ENC_T[$i]}" "${OJPH_ENC_T[$i]}" "${KDU_ENC_T[$i]}" \
     "${JPEG_ENC_MP[$i]}" "${OJPH_ENC_MP[$i]}" "${KDU_ENC_MP[$i]}"
 done)
 
 ## Decoding
 
-| Qstep | JPEG bpp | OJPH bpp | KDU bpp | JPEG (s) | OJPH (s) | KDU (s) | JPEG (MP/s) | OJPH (MP/s) | KDU (MP/s) |
-|------:|----------|----------|---------|----------|----------|---------|-------------|-------------|------------|
+| Qstep | Qfactor | JPEG bpp | OJPH bpp | KDU bpp | JPEG (s) | OJPH (s) | KDU (s) | JPEG (MP/s) | OJPH (MP/s) | KDU (MP/s) |
+|------:|--------:|----------|----------|---------|----------|----------|---------|-------------|-------------|------------|
 $(for i in 0 1 2 3 4 5; do
-  printf "| %-5s | %-8s | %-8s | %-7s | %-8s | %-8s | %-7s | %-11s | %-11s | %-10s |\n" \
-    "${QSTEPS[$i]}" "${JPEG_BPP[$i]}" "${OJPH_BPP[$i]}" "${KDU_BPP[$i]}" \
+  printf "| %-5s | %-7s | %-8s | %-8s | %-7s | %-8s | %-8s | %-7s | %-11s | %-11s | %-10s |\n" \
+    "${QSTEPS[$i]}" "${JPEG_Q[$i]}" "${JPEG_BPP[$i]}" "${OJPH_BPP[$i]}" "${KDU_BPP[$i]}" \
     "${JPEG_DEC_T[$i]}" "${OJPH_DEC_T[$i]}" "${KDU_DEC_T[$i]}" \
     "${JPEG_DEC_MP[$i]}" "${OJPH_DEC_MP[$i]}" "${KDU_DEC_MP[$i]}"
 done)
