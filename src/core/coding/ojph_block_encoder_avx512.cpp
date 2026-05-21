@@ -455,16 +455,78 @@ namespace ojph {
     static inline void
     ms_drain(ms_struct* msp)
     {
-      int max_bits = 8 - (int)msp->last_was_ff;
-      while (msp->used_bits >= max_bits)
-      {
-        ui8 byte = (ui8)(msp->tmp & ((1u << max_bits) - 1));
-        msp->buf[msp->pos++] = byte;
-        msp->tmp >>= max_bits;
-        msp->used_bits -= max_bits;
-        max_bits = 8 - (int)(byte == 0xFF);
+      if (msp->last_was_ff) {
+        if (msp->used_bits < 7)
+          return;
+        msp->buf[msp->pos++] = (ui8)(msp->tmp & 0x7F);
+        msp->tmp >>= 7;
+        msp->used_bits -= 7;
+        msp->last_was_ff = false;
       }
-      msp->last_was_ff = (max_bits == 7);
+
+      while (msp->used_bits >= 8) {
+        int n_bytes = msp->used_bits >> 3;
+        if (n_bytes > 8) n_bytes = 8;
+
+        ui64 word = msp->tmp;
+        ui64 valid_mask = (n_bytes < 8)
+                        ? (1ULL << (n_bytes * 8)) - 1 : ~(ui64)0;
+
+        ui64 w = ~word;
+        ui64 ff_detect = (w - 0x0101010101010101ULL) & ~w
+                       & 0x8080808080808080ULL;
+        ff_detect &= valid_mask;
+
+        if (likely(ff_detect == 0)) {
+          memcpy(msp->buf + msp->pos, &word, (size_t)n_bytes);
+          msp->pos += (ui32)n_bytes;
+          if (n_bytes < 8)
+            msp->tmp >>= (n_bytes * 8);
+          else
+            msp->tmp = 0;
+          msp->used_bits -= n_bytes * 8;
+        } else {
+          int ff_pos = (int)(count_trailing_zeros(ff_detect) >> 3);
+          int safe = ff_pos + 1;
+          memcpy(msp->buf + msp->pos, &word, (size_t)safe);
+          msp->pos += (ui32)safe;
+          int bits = safe * 8;
+          if (bits < 64)
+            msp->tmp >>= bits;
+          else
+            msp->tmp = 0;
+          msp->used_bits -= bits;
+
+          if (msp->used_bits >= 7) {
+            msp->buf[msp->pos++] = (ui8)(msp->tmp & 0x7F);
+            msp->tmp >>= 7;
+            msp->used_bits -= 7;
+            msp->last_was_ff = false;
+          } else {
+            msp->last_was_ff = true;
+            return;
+          }
+        }
+      }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    static inline void
+    ms_encode_nodefer(ms_struct* msp, ui64 cwd, int cwd_len)
+    {
+      while (true) {
+        int avail = 64 - msp->used_bits;
+        if (likely(cwd_len <= avail)) {
+          msp->tmp |= cwd << msp->used_bits;
+          msp->used_bits += cwd_len;
+          return;
+        }
+        msp->tmp |= (cwd & ((1ULL << avail) - 1)) << msp->used_bits;
+        msp->used_bits = 64;
+        ms_drain(msp);
+        cwd >>= avail;
+        cwd_len -= avail;
+      }
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -743,17 +805,18 @@ static void proc_ms_encode(ms_struct *msp,
                 _cwd_len += cwd_len[idx1];
                 _cwd     |= ((ui64)cwd[idx1 + 1]) << _cwd_len;
                 _cwd_len += cwd_len[idx1 + 1];
-                ms_encode(msp, _cwd, _cwd_len);
+                ms_encode_nodefer(msp, _cwd, _cwd_len);
             } else {
-                ms_encode(msp, _cwd, _cwd_len);
+                ms_encode_nodefer(msp, _cwd, _cwd_len);
                 _cwd     = cwd[idx1];
                 _cwd_len = cwd_len[idx1];
                 _cwd     |= ((ui64)cwd[idx1 + 1]) << _cwd_len;
                 _cwd_len += cwd_len[idx1 + 1];
-                ms_encode(msp, _cwd, _cwd_len);
+                ms_encode_nodefer(msp, _cwd, _cwd_len);
             }
         }
     }
+    ms_drain(msp);
 }
 
 static __m512i cal_eps_vec(__m512i *eq_vec, __m512i &u_q_vec,
