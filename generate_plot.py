@@ -44,16 +44,16 @@ ojph_opt_dec_ms  = [32.0, 39.8, 42.4, 45.5, 47.6, 53.3]
 ll_bpp = 9.11
 ojph_ll_enc_orig_mps = 62
 ojph_ll_enc_opt_mps = 85
-kdu_ll_enc_mps = 264
+kdu_ll_enc_mps = 296
 ojph_ll_enc_orig_ms = 133.6
 ojph_ll_enc_opt_ms = 96.9
-kdu_ll_enc_ms = 31.3
+kdu_ll_enc_ms = 28.0
 ojph_ll_dec_orig_mps = 109
 ojph_ll_dec_opt_mps = 110
-kdu_ll_dec_mps = 148
+kdu_ll_dec_mps = 160
 ojph_ll_dec_orig_ms = 76.0
 ojph_ll_dec_opt_ms = 75.0
-kdu_ll_dec_ms = 55.8
+kdu_ll_dec_ms = 51.6
 
 # Colors
 C_JPEG = '#e74c3c'

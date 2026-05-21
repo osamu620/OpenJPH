@@ -63,7 +63,7 @@ accumulator, branchless byte drain, AVX-512 rev_tx_to_cb32.
 
 | Mode | OJPH bpp | KDU bpp | OJPH opt (s) | KDU (s) | OJPH opt (MP/s) | KDU (MP/s) | KDU / OJPH |
 |------|----------|---------|--------------|---------|-----------------|------------|------------|
-| lossless | 9.11 | 9.11 | .0969 | .0313 | 85 | 264 | 3.11x |
+| lossless | 9.11 | 9.11 | .0969 | .0280 | 85 | 296 | 3.48x |
 
 ### Decoding (optimized)
 
@@ -81,16 +81,16 @@ accumulator, branchless byte drain, AVX-512 rev_tx_to_cb32.
 
 | Mode | OJPH opt (s) | KDU (s) | OJPH opt (MP/s) | KDU (MP/s) | KDU / OJPH |
 |------|--------------|---------|-----------------|------------|------------|
-| lossless | .0750 | .0558 | 110 | 148 | 1.35x |
+| lossless | .0750 | .0516 | 110 | 160 | 1.45x |
 
 ### Summary (updated)
 
 | Metric | JPEG | OJPH (orig) | OJPH (opt) | Kakadu |
 |--------|-----:|------------:|-----------:|-------:|
 | Avg encode throughput (MP/s), lossy | 391 | 158 | 168 | 426 |
-| Encode throughput (MP/s), lossless | — | 62 | 85 | 264 |
+| Encode throughput (MP/s), lossless | — | 62 | 85 | 296 |
 | Avg decode throughput (MP/s), lossy | 319 | 200 | 195 | 247 |
-| Decode throughput (MP/s), lossless | — | 109 | 110 | 148 |
+| Decode throughput (MP/s), lossless | — | 109 | 110 | 160 |
 
 | Comparison (lossy avg) | Encode | Decode |
 |------------------------|-------:|-------:|
@@ -99,8 +99,8 @@ accumulator, branchless byte drain, AVX-512 rev_tx_to_cb32.
 
 | Comparison (lossless)  | Encode | Decode |
 |------------------------|-------:|-------:|
-| Kakadu / OJPH (opt)    | 3.11x  | 1.35x  |
-| Kakadu / OJPH (orig)   | 4.26x  | 1.36x  |
+| Kakadu / OJPH (opt)    | 3.48x  | 1.45x  |
+| Kakadu / OJPH (orig)   | 4.77x  | 1.47x  |
 
 ### Optimization impact by operating point
 
