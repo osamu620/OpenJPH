@@ -858,7 +858,6 @@ static __m512i proc_cq2(ui32 x, __m512i *cx_val_vec, __m512i &rho_vec,
     return _mm512_or_epi32(tmp, tmp1);
 }
 
-using fn_proc_cq = __m512i (*)(ui32, __m512i *, __m512i &, const __m512i);
 
 static void proc_mel_encode1(mel_struct *melp, __m512i &cq_vec,
                              __m512i &rho_vec, __m512i u_q_vec, ui32 ignore,
@@ -926,8 +925,6 @@ static void proc_mel_encode2(mel_struct *melp, __m512i &cq_vec,
     }
 }
 
-using fn_proc_mel_encode = void (*)(mel_struct *, __m512i &, __m512i &,
-                                    __m512i, ui32, const __m512i);
 
 static inline void
 build_vlc_uvlc_pair1(ui32 *tuple, ui32 *u_q, ui32 i, ui32 i_max,
@@ -1031,7 +1028,101 @@ static void proc_vlc_encode2(vlc_struct_avx512 *vlcp, ui32 *tuple,
     }
 }
 
-using fn_proc_vlc_encode = void (*)(vlc_struct_avx512 *, ui32 *, ui32 *, ui32);
+template<int PASS>
+static inline void encode_x_loop(
+    ui32 *sp, ui32 stride, ui32 height, ui32 y,
+    ui32 n_loop, ui32 _width, ui32 ignore, ui32 p,
+    mel_struct &mel, vlc_struct_avx512 &vlc, ms_struct &ms,
+    __m512i *e_val_vec, __m512i &prev_e_val_vec,
+    __m512i *cx_val_vec, __m512i &prev_cx_val_vec,
+    __m512i &prev_cq_vec,
+    const __m512i &right_shift, const __m512i &left_shift)
+{
+    ui32 *vlc_tbl = (PASS == 1) ? vlc_tbl0 : vlc_tbl1;
+
+    __m512i tmp, tmp1;
+    __m512i eq_vec[4];
+    __m512i s_vec[4];
+    __m512i src_vec[4];
+    __m512i rho_vec;
+    __m512i e_qmax_vec;
+    __m512i kappa_vec;
+
+    for (ui32 x = 0; x < n_loop; ++x) {
+        si32 true_x = (si32)x << 5;
+        ui32 mask32 = 0xFFFFFFFFu;
+        si32 entries = true_x + 32 - (si32)_width;
+        mask32 >>= ((entries >= 0) ? entries : 0);
+        __mmask16 load_mask0 = _cvtu32_mask16(mask32);
+        __mmask16 load_mask1 = _cvtu32_mask16(mask32 >> 16);
+
+        src_vec[0] = _mm512_maskz_loadu_epi32(load_mask0, sp);
+        src_vec[2] = _mm512_maskz_loadu_epi32(load_mask1, sp + 16);
+
+        if (y + 1 < height) {
+            src_vec[1] = _mm512_maskz_loadu_epi32(load_mask0, sp + stride);
+            src_vec[3] =
+              _mm512_maskz_loadu_epi32(load_mask1, sp + 16 + stride);
+        } else {
+            src_vec[1] = ZERO;
+            src_vec[3] = ZERO;
+        }
+        sp += 32;
+
+        proc_pixel(src_vec, p, eq_vec, s_vec, rho_vec, e_qmax_vec);
+
+        tmp = _mm512_permutexvar_epi32(right_shift, e_val_vec[x]);
+        tmp = _mm512_mask_permutexvar_epi32(tmp, 0x8000, right_shift,
+                                            e_val_vec[x + 1]);
+        auto mask = _mm512_cmpgt_epi32_mask(e_val_vec[x], tmp);
+        auto max_e_vec = _mm512_mask_mov_epi32(tmp, mask, e_val_vec[x]);
+        max_e_vec = _mm512_sub_epi32(max_e_vec, ONE);
+
+        tmp = _mm512_max_epi32(max_e_vec, ONE);
+        tmp1 = _mm512_sub_epi32(rho_vec, ONE);
+        tmp1 = _mm512_and_epi32(rho_vec, tmp1);
+        mask = _mm512_cmpneq_epi32_mask(tmp1, ZERO);
+        kappa_vec = _mm512_mask_mov_epi32(ONE, mask, tmp);
+
+        if (PASS == 1)
+            tmp = proc_cq1(x, cx_val_vec, rho_vec, right_shift);
+        else
+            tmp = proc_cq2(x, cx_val_vec, rho_vec, right_shift);
+        auto cq_vec = _mm512_mask_permutexvar_epi32(prev_cq_vec, 0xFFFE,
+                                                    left_shift, tmp);
+        prev_cq_vec = _mm512_mask_permutexvar_epi32(ZERO, 0x1, left_shift,
+                                                    tmp);
+
+        update_lep(x, prev_e_val_vec, eq_vec, e_val_vec, left_shift);
+        update_lcxp(x, prev_cx_val_vec, rho_vec, cx_val_vec, left_shift);
+
+        auto uq_vec = _mm512_max_epi32(kappa_vec, e_qmax_vec);
+        auto u_q_vec = _mm512_sub_epi32(uq_vec, kappa_vec);
+
+        auto eps_vec = cal_eps_vec(eq_vec, u_q_vec, e_qmax_vec);
+        __m512i tuple_vec = cal_tuple(cq_vec, rho_vec, eps_vec, vlc_tbl);
+        ui32 _ignore = ((n_loop - 1) == x) ? ignore : 0;
+
+        if (PASS == 1)
+            proc_mel_encode1(&mel, cq_vec, rho_vec, u_q_vec, _ignore,
+                             right_shift);
+        else
+            proc_mel_encode2(&mel, cq_vec, rho_vec, u_q_vec, _ignore,
+                             right_shift);
+
+        proc_ms_encode(&ms, tuple_vec, uq_vec, rho_vec, s_vec);
+
+        ui32 u_q[16];
+        ui32 tuple[16];
+        tuple_vec = _mm512_srli_epi32(tuple_vec, 4);
+        _mm512_storeu_si512(tuple, tuple_vec);
+        _mm512_storeu_si512(u_q, u_q_vec);
+        if (PASS == 1)
+            proc_vlc_encode1(&vlc, tuple, u_q, _ignore);
+        else
+            proc_vlc_encode2(&vlc, tuple, u_q, _ignore);
+    }
+}
 
 void ojph_encode_codeblock_avx512(ui32* buf, ui32 missing_msbs,
                                   ui32 num_passes, ui32 _width, ui32 height,
@@ -1090,22 +1181,9 @@ void ojph_encode_codeblock_avx512(ui32* buf, ui32 missing_msbs,
 
     __m512i prev_cq_vec = ZERO;
 
-    __m512i tmp;
-    __m512i tmp1;
-
-    __m512i eq_vec[4];
-    __m512i s_vec[4];
-    __m512i src_vec[4];
-    __m512i rho_vec;
-    __m512i e_qmax_vec;
-    __m512i kappa_vec;
-
     ui32 n_loop = (width + 31) / 32;
 
-    ui32 *vlc_tbl = vlc_tbl0;
-    fn_proc_cq proc_cq = proc_cq1;
-    fn_proc_mel_encode proc_mel_encode = proc_mel_encode1;
-    fn_proc_vlc_encode proc_vlc_encode = proc_vlc_encode1;
+    __m512i tmp;
 
     /* 2 lines per iteration */
     for (ui32 y = 0; y < height; y += 2)
@@ -1121,102 +1199,22 @@ void ojph_encode_codeblock_avx512(ui32* buf, ui32 missing_msbs,
 
         ui32 *sp = buf + y * stride;
 
-        /* 32 bytes per iteration */
-        for (ui32 x = 0; x < n_loop; ++x) {
-
-            // mask to stop loading unnecessary data
-            si32 true_x = (si32)x << 5;
-            ui32 mask32 = 0xFFFFFFFFu;
-            si32 entries = true_x + 32 - (si32)_width;
-            mask32 >>= ((entries >= 0) ? entries : 0);
-            __mmask16 load_mask0 = _cvtu32_mask16(mask32);
-            __mmask16 load_mask1 = _cvtu32_mask16(mask32 >> 16);
-
-            /* t = sp[i]; */
-            src_vec[0] = _mm512_maskz_loadu_epi32(load_mask0, sp);
-            src_vec[2] = _mm512_maskz_loadu_epi32(load_mask1, sp + 16);
-
-            if (y + 1 < height) {
-                src_vec[1] = _mm512_maskz_loadu_epi32(load_mask0, sp + stride);
-                src_vec[3] =
-                  _mm512_maskz_loadu_epi32(load_mask1, sp + 16 + stride);
-            } else {
-                src_vec[1] = ZERO;
-                src_vec[3] = ZERO;
-            }
-            sp += 32;
-
-            /* src_vec layout:
-             * src_vec[0]:[0, 0],[0, 1],[0, 2],[0, 3],[0, 4],[0, 5]...[0,15]
-             * src_vec[1]:[1, 0],[1, 1],[1, 2],[1, 3],[1, 4],[1, 5]...[1,15]
-             * src_vec[2]:[0,16],[0,17],[0,18],[0,19],[0,20],[0,21]...[0,31]
-             * src_vec[3]:[1,16],[1,17],[1,18],[1,19],[1,20],[1,21]...[1,31]
-             */
-            proc_pixel(src_vec, p, eq_vec, s_vec, rho_vec, e_qmax_vec);
-
-            // max_e[(i + 1) % num] = ojph_max(lep[i + 1], lep[i + 2]) - 1;
-            tmp = _mm512_permutexvar_epi32(right_shift, e_val_vec[x]);
-            tmp = _mm512_mask_permutexvar_epi32(tmp, 0x8000, right_shift,
-                                                e_val_vec[x + 1]);
-            auto mask = _mm512_cmpgt_epi32_mask(e_val_vec[x], tmp);
-            auto max_e_vec = _mm512_mask_mov_epi32(tmp, mask, e_val_vec[x]);
-            max_e_vec = _mm512_sub_epi32(max_e_vec, ONE);
-
-            // kappa[i] = (rho[i] & (rho[i] - 1)) ? ojph_max(1, max_e[i]) : 1;
-            tmp = _mm512_max_epi32(max_e_vec, ONE);
-            tmp1 = _mm512_sub_epi32(rho_vec, ONE);
-            tmp1 = _mm512_and_epi32(rho_vec, tmp1);
-            mask = _mm512_cmpneq_epi32_mask(tmp1, ZERO);
-            kappa_vec = _mm512_mask_mov_epi32(ONE, mask, tmp);
-
-            /* cq[1 - 16] = cq_vec
-             * cq[0] = prev_cq_vec[0]
-             */
-            tmp = proc_cq(x, cx_val_vec, rho_vec, right_shift);
-            auto cq_vec = _mm512_mask_permutexvar_epi32(prev_cq_vec, 0xFFFE,
-                                                        left_shift, tmp);
-            prev_cq_vec = _mm512_mask_permutexvar_epi32(ZERO, 0x1, left_shift,
-                                                        tmp);
-
-            update_lep(x, prev_e_val_vec, eq_vec, e_val_vec, left_shift);
-            update_lcxp(x, prev_cx_val_vec, rho_vec, cx_val_vec, left_shift);
-
-            /* Uq[i] = ojph_max(e_qmax[i], kappa[i]); */
-            /* u_q[i] = Uq[i] - kappa[i]; */
-            auto uq_vec = _mm512_max_epi32(kappa_vec, e_qmax_vec);
-            auto u_q_vec = _mm512_sub_epi32(uq_vec, kappa_vec);
-
-            auto eps_vec = cal_eps_vec(eq_vec, u_q_vec, e_qmax_vec);
-            __m512i tuple_vec = cal_tuple(cq_vec, rho_vec, eps_vec, vlc_tbl);
-            ui32 _ignore = ((n_loop - 1) == x) ? ignore : 0;
-
-            proc_mel_encode(&mel, cq_vec, rho_vec, u_q_vec, _ignore,
-                            right_shift);
-
-            proc_ms_encode(&ms, tuple_vec, uq_vec, rho_vec, s_vec);
-
-            // vlc_encode(&vlc, tuple[i*2+0] >> 8, (tuple[i*2+0] >> 4) & 7);
-            // vlc_encode(&vlc, tuple[i*2+1] >> 8, (tuple[i*2+1] >> 4) & 7);
-            ui32 u_q[16];
-            ui32 tuple[16];
-            /* The tuple is scaled by 4 due to:
-             * vlc_encode(&vlc, tuple0 >> 8, (tuple0 >> 4) & 7, true);
-             * So in the vlc_encode, the tuple will only be scaled by 2.
-             */
-            tuple_vec = _mm512_srli_epi32(tuple_vec, 4);
-            _mm512_storeu_si512(tuple, tuple_vec);
-            _mm512_storeu_si512(u_q, u_q_vec);
-            proc_vlc_encode(&vlc, tuple, u_q, _ignore);
-        }
+        if (y == 0)
+            encode_x_loop<1>(sp, stride, height, y, n_loop, _width,
+                             ignore, p, mel, vlc, ms,
+                             e_val_vec, prev_e_val_vec,
+                             cx_val_vec, prev_cx_val_vec, prev_cq_vec,
+                             right_shift, left_shift);
+        else
+            encode_x_loop<2>(sp, stride, height, y, n_loop, _width,
+                             ignore, p, mel, vlc, ms,
+                             e_val_vec, prev_e_val_vec,
+                             cx_val_vec, prev_cx_val_vec, prev_cq_vec,
+                             right_shift, left_shift);
 
         tmp = _mm512_permutexvar_epi32(right_shift, cx_val_vec[0]);
         tmp = _mm512_slli_epi32(tmp, 2);
         prev_cq_vec = _mm512_maskz_add_epi32(0x1, tmp, cx_val_vec[0]);
-
-        proc_cq = proc_cq2;
-        vlc_tbl = vlc_tbl1;
-        proc_mel_encode = proc_mel_encode2;
-        proc_vlc_encode = proc_vlc_encode2;
     }
 
     ms_terminate(&ms);
