@@ -52,13 +52,22 @@
   #define likely(x)       (x)
   #define unlikely(x)     (x)
   #include <stdlib.h>
-  #define ojph_bswap64(x) _byteswap_uint64(x)
-  #define ojph_bswap32(x) _byteswap_ulong(x)
+  #include <intrin.h>
+  #define ojph_bswap64(x)   _byteswap_uint64(x)
+  #define ojph_bswap32(x)   _byteswap_ulong(x)
+  static inline int ojph_ctz(unsigned int x) {
+    unsigned long idx; _BitScanForward(&idx, x); return (int)idx;
+  }
+  static inline int ojph_popcount(unsigned int x) {
+    return (int)__popcnt(x);
+  }
 #else
   #define likely(x)       __builtin_expect((x), 1)
   #define unlikely(x)     __builtin_expect((x), 0)
   #define ojph_bswap64(x) __builtin_bswap64(x)
   #define ojph_bswap32(x) __builtin_bswap32(x)
+  #define ojph_ctz(x)     __builtin_ctz(x)
+  #define ojph_popcount(x) __builtin_popcount(x)
 #endif
 
 #if !defined(OJPH_COMPILER_MSVC) && !defined(OJPH_DISABLE_NASM)
@@ -1121,8 +1130,8 @@ static void proc_mel_encode1(mel_struct *melp, __m512i &cq_vec,
     ui32 sig = active & combined_bit;
 
     while (sig) {
-        ui32 first = (ui32)__builtin_ctz(sig);
-        ui32 run_len = (ui32)__builtin_popcount(
+        ui32 first = (ui32)ojph_ctz(sig);
+        ui32 run_len = (ui32)ojph_popcount(
             active & ((1u << first) - 1));
         mel_advance_run(melp, run_len);
         mel_encode_significance(melp);
@@ -1130,7 +1139,7 @@ static void proc_mel_encode1(mel_struct *melp, __m512i &cq_vec,
         sig &= sig - 1;
     }
     if (active)
-        mel_advance_run(melp, (ui32)__builtin_popcount(active));
+        mel_advance_run(melp, (ui32)ojph_popcount(active));
 }
 
 static void proc_mel_encode2(mel_struct *melp, __m512i &cq_vec,
@@ -1149,8 +1158,8 @@ static void proc_mel_encode2(mel_struct *melp, __m512i &cq_vec,
     ui16 sig = active & mel_bit;
 
     while (sig) {
-        ui32 first = (ui32)__builtin_ctz(sig);
-        ui32 run_len = (ui32)__builtin_popcount(
+        ui32 first = (ui32)ojph_ctz(sig);
+        ui32 run_len = (ui32)ojph_popcount(
             active & (ui16)((1u << first) - 1));
         mel_advance_run(melp, run_len);
         mel_encode_significance(melp);
@@ -1158,7 +1167,7 @@ static void proc_mel_encode2(mel_struct *melp, __m512i &cq_vec,
         sig &= sig - 1;
     }
     if (active)
-        mel_advance_run(melp, (ui32)__builtin_popcount(active));
+        mel_advance_run(melp, (ui32)ojph_popcount(active));
 }
 
 

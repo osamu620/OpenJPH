@@ -87,6 +87,8 @@ else()
           else()
             add_compile_definitions(OJPH_DISABLE_NASM)
           endif()
+        else()
+          add_compile_definitions(OJPH_DISABLE_NASM)
         endif()
       endif()
 
