@@ -324,14 +324,16 @@ namespace ojph {
 
     //////////////////////////////////////////////////////////////////////////
     static inline void
-    mel_emit_bit(mel_struct* melp, int v)
+    mel_emit_bits(mel_struct* melp, ui32 bits, int num_bits)
     {
-      melp->tmp = (melp->tmp << 1) + v;
-      melp->remaining_bits--;
-      if (melp->remaining_bits == 0) {
-        melp->buf[melp->pos++] = (ui8)melp->tmp;
-        melp->remaining_bits = (melp->tmp == 0xFF ? 7 : 8);
-        melp->tmp = 0;
+      melp->tmp = (melp->tmp << num_bits) | (int)bits;
+      melp->remaining_bits -= num_bits;
+      if (melp->remaining_bits <= 0) {
+        int excess = -melp->remaining_bits;
+        ui8 byte = (ui8)(melp->tmp >> excess);
+        melp->buf[melp->pos++] = byte;
+        melp->tmp &= (1 << excess) - 1;
+        melp->remaining_bits += 8 - (byte == 0xFF);
       }
     }
 
@@ -339,23 +341,19 @@ namespace ojph {
     static inline void
     mel_encode(mel_struct* melp, bool bit)
     {
-      //MEL exponent
       static const int mel_exp[13] = {0,0,0,1,1,1,2,2,2,3,3,4,5};
 
       if (bit == false) {
         ++melp->run;
         if (melp->run >= melp->threshold) {
-          mel_emit_bit(melp, 1);
+          mel_emit_bits(melp, 1, 1);
           melp->run = 0;
           melp->k = ojph_min(12, melp->k + 1);
           melp->threshold = 1 << mel_exp[melp->k];
         }
       } else {
-        mel_emit_bit(melp, 0);
         int t = mel_exp[melp->k];
-        while (t > 0) {
-          mel_emit_bit(melp, (melp->run >> --t) & 1);
-        }
+        mel_emit_bits(melp, melp->run & ((1u << t) - 1), t + 1);
         melp->run = 0;
         melp->k = ojph_max(0, melp->k - 1);
         melp->threshold = 1 << mel_exp[melp->k];
@@ -486,7 +484,7 @@ namespace ojph {
     terminate_mel_vlc(mel_struct* melp, vlc_struct_avx512* vlcp)
     {
       if (melp->run > 0)
-        mel_emit_bit(melp, 1);
+        mel_emit_bits(melp, 1, 1);
 
       if (vlcp->last_greater_than_8F && (vlcp->tmp & 0x7f) == 0x7f) {
         *(vlcp->buf - vlcp->pos) = 0x7f;
