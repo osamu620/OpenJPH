@@ -17,28 +17,28 @@ kdu_bpp   = [0.38, 0.92, 1.31, 1.75, 2.02, 2.88]
 jpeg_enc_mps  = [471, 432, 400, 391, 351, 304]
 ojph_enc_mps  = [231, 176, 159, 139, 133, 114]
 kdu_enc_mps   = [500, 453, 432, 409, 399, 367]
-ojph_opt_enc_mps = [284, 240, 217, 199, 192, 168]
+ojph_opt_enc_mps = [294, 250, 225, 212, 205, 180]
 
 jpeg_enc_ms  = [17.6, 19.2, 20.7, 21.2, 23.6, 27.2]
 ojph_enc_ms  = [35.8, 47.1, 52.1, 59.3, 61.9, 72.4]
 kdu_enc_ms   = [16.6, 18.3, 19.2, 20.3, 20.8, 22.6]
-ojph_opt_enc_ms  = [29.2, 34.6, 38.2, 41.6, 43.1, 49.4]
+ojph_opt_enc_ms  = [28.2, 33.2, 36.9, 39.1, 40.5, 46.0]
 
 jpeg_dec_mps  = [416, 370, 337, 312, 261, 219]
 ojph_dec_mps  = [267, 221, 197, 184, 177, 158]
 kdu_dec_mps   = [290, 259, 249, 240, 229, 215]
-ojph_opt_dec_mps = [285, 230, 211, 190, 184, 165]
+ojph_opt_dec_mps = [282, 226, 208, 192, 184, 165]
 
 jpeg_dec_ms  = [19.9, 22.4, 24.6, 26.5, 31.7, 37.8]
 ojph_dec_ms  = [31.0, 37.4, 42.1, 45.0, 46.6, 52.3]
 kdu_dec_ms   = [28.6, 32.0, 33.3, 34.5, 36.1, 38.5]
-ojph_opt_dec_ms  = [29.1, 36.1, 39.4, 43.7, 45.1, 50.4]
+ojph_opt_dec_ms  = [29.4, 36.7, 39.8, 43.1, 45.0, 50.2]
 
 ll_bpp = 9.12
-ojph_ll_enc_orig_mps, ojph_ll_enc_opt_mps, kdu_ll_enc_mps = 62, 113, 302
-ojph_ll_enc_orig_ms,  ojph_ll_enc_opt_ms,  kdu_ll_enc_ms  = 133.6, 73.2, 27.5
-ojph_ll_dec_orig_mps, ojph_ll_dec_opt_mps, kdu_ll_dec_mps = 109, 115, 163
-ojph_ll_dec_orig_ms,  ojph_ll_dec_opt_ms,  kdu_ll_dec_ms  = 76.0, 71.9, 51.0
+ojph_ll_enc_orig_mps, ojph_ll_enc_opt_mps, kdu_ll_enc_mps = 62, 138, 302
+ojph_ll_enc_orig_ms,  ojph_ll_enc_opt_ms,  kdu_ll_enc_ms  = 133.6, 60.0, 27.5
+ojph_ll_dec_orig_mps, ojph_ll_dec_opt_mps, kdu_ll_dec_mps = 109, 116, 163
+ojph_ll_dec_orig_ms,  ojph_ll_dec_opt_ms,  kdu_ll_dec_ms  = 76.0, 71.3, 51.0
 
 # ============================================================
 # 16-bit data (ElephantDream_4K.ppm, 4096x2160, 8.85 MP)
@@ -47,26 +47,26 @@ ojph_ll_dec_orig_ms,  ojph_ll_dec_opt_ms,  kdu_ll_dec_ms  = 76.0, 71.9, 51.0
 e_bpp = [0.02, 0.03, 0.05, 0.08, 0.13, 0.20, 0.29, 0.44, 0.67, 1.10, 1.46]
 
 e_orig_enc_mps = [366, 351, 327, 308, 278, 255, 235, 212, 194, 178, 171]
-e_opt_enc_mps  = [367, 353, 334, 317, 300, 275, 265, 248, 239, 224, 215]
-e_kdu_enc_mps  = [341, 339, 333, 334, 320, 312, 312, 304, 298, 294, 291]
+e_opt_enc_mps  = [376, 355, 340, 322, 303, 279, 271, 256, 248, 237, 227]
+e_kdu_enc_mps  = [343, 338, 333, 333, 324, 314, 316, 302, 299, 293, 288]
 
 e_orig_enc_ms = [24.1, 25.2, 27.0, 28.7, 31.7, 34.7, 37.5, 41.6, 45.4, 49.4, 51.5]
-e_opt_enc_ms  = [24.1, 25.0, 26.5, 27.9, 29.5, 32.2, 33.4, 35.6, 37.0, 39.5, 41.1]
-e_kdu_enc_ms  = [25.9, 26.1, 26.5, 26.5, 27.6, 28.3, 28.3, 29.0, 29.6, 30.0, 30.4]
+e_opt_enc_ms  = [23.5, 24.9, 26.0, 27.5, 29.2, 31.7, 32.6, 34.6, 35.7, 37.3, 38.9]
+e_kdu_enc_ms  = [25.8, 26.2, 26.6, 26.6, 27.3, 28.2, 28.0, 29.3, 29.6, 30.2, 30.7]
 
 e_orig_dec_mps = [327, 313, 295, 285, 261, 245, 233, 215, 204, 195, 191]
-e_opt_dec_mps  = [344, 325, 310, 298, 277, 253, 238, 225, 212, 201, 197]
-e_kdu_dec_mps  = [256, 259, 249, 246, 241, 236, 233, 220, 219, 212, 208]
+e_opt_dec_mps  = [334, 329, 310, 292, 275, 252, 242, 226, 209, 202, 194]
+e_kdu_dec_mps  = [260, 257, 253, 250, 240, 237, 231, 223, 220, 217, 215]
 
 e_orig_dec_ms = [27.1, 28.2, 29.9, 31.0, 33.8, 36.0, 38.0, 41.0, 43.2, 45.2, 46.2]
-e_opt_dec_ms  = [25.7, 27.2, 28.5, 29.7, 31.9, 34.9, 37.1, 39.2, 41.4, 43.8, 44.7]
-e_kdu_dec_ms  = [34.6, 34.1, 35.4, 35.9, 36.7, 37.4, 37.8, 40.1, 40.3, 41.7, 42.4]
+e_opt_dec_ms  = [26.5, 26.9, 28.5, 30.3, 32.2, 35.1, 36.6, 39.2, 42.3, 43.8, 45.5]
+e_kdu_dec_ms  = [34.0, 34.4, 35.0, 35.4, 36.8, 37.4, 38.3, 39.6, 40.3, 40.7, 41.2]
 
 e_ll_bpp = 18.54
-e_ll_orig_enc_mps, e_ll_opt_enc_mps, e_ll_kdu_enc_mps = 56, 95, 176
-e_ll_orig_enc_ms,  e_ll_opt_enc_ms,  e_ll_kdu_enc_ms  = 157.5, 92.3, 50.0
-e_ll_orig_dec_mps, e_ll_opt_dec_mps, e_ll_kdu_dec_mps = 83, 90, 152
-e_ll_orig_dec_ms,  e_ll_opt_dec_ms,  e_ll_kdu_dec_ms  = 105.6, 97.9, 58.1
+e_ll_orig_enc_mps, e_ll_opt_enc_mps, e_ll_kdu_enc_mps = 56, 111, 178
+e_ll_orig_enc_ms,  e_ll_opt_enc_ms,  e_ll_kdu_enc_ms  = 157.5, 79.5, 49.6
+e_ll_orig_dec_mps, e_ll_opt_dec_mps, e_ll_kdu_dec_mps = 83, 90, 153
+e_ll_orig_dec_ms,  e_ll_opt_dec_ms,  e_ll_kdu_dec_ms  = 105.6, 98.4, 57.8
 
 # ============================================================
 # Colors
@@ -99,7 +99,7 @@ ax.plot(kdu_bpp, kdu_enc_mps, '^-', color=C_KDU, label='HTJ2K (Kakadu)', ms=ms, 
 ax.plot(ll_bpp, ojph_ll_enc_orig_mps, 's', color=C_OJPH, ms=ms+2)
 ax.plot(ll_bpp, ojph_ll_enc_opt_mps, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
 ax.plot(ll_bpp, kdu_ll_enc_mps, '^', color=C_KDU, ms=ms+2)
-ax.annotate('+83%', xy=(ll_bpp, ojph_ll_enc_opt_mps),
+ax.annotate('+123%', xy=(ll_bpp, ojph_ll_enc_opt_mps),
             xytext=(ll_bpp - 1.5, ojph_ll_enc_opt_mps + 20),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
@@ -133,7 +133,7 @@ ax.plot(kdu_bpp, kdu_enc_ms, '^-', color=C_KDU, label='HTJ2K (Kakadu)', ms=ms, l
 ax.plot(ll_bpp, ojph_ll_enc_orig_ms, 's', color=C_OJPH, ms=ms+2)
 ax.plot(ll_bpp, ojph_ll_enc_opt_ms, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
 ax.plot(ll_bpp, kdu_ll_enc_ms, '^', color=C_KDU, ms=ms+2)
-ax.annotate('+83%', xy=(ll_bpp, ojph_ll_enc_opt_ms),
+ax.annotate('+123%', xy=(ll_bpp, ojph_ll_enc_opt_ms),
             xytext=(ll_bpp - 1.8, ojph_ll_enc_opt_ms + 12),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
@@ -233,7 +233,7 @@ plot_on_pair(al, ar,
      (e_ll_bpp, e_ll_opt_enc_mps,  's', C_OJPH_OPT, MK_OPEN),
      (e_ll_bpp, e_ll_kdu_enc_mps,  '^', C_KDU,      MK_NONE)],
     'upper right')
-ar.annotate('+71%', xy=(e_ll_bpp, e_ll_opt_enc_mps),
+ar.annotate('+98%', xy=(e_ll_bpp, e_ll_opt_enc_mps),
             xytext=(e_ll_bpp - 0.6, e_ll_opt_enc_mps + 25),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
@@ -259,7 +259,7 @@ plot_on_pair(al, ar,
      (e_ll_bpp, e_ll_opt_enc_ms,  's', C_OJPH_OPT, MK_OPEN),
      (e_ll_bpp, e_ll_kdu_enc_ms,  '^', C_KDU,      MK_NONE)],
     'upper left')
-ar.annotate('+71%', xy=(e_ll_bpp, e_ll_opt_enc_ms),
+ar.annotate('+98%', xy=(e_ll_bpp, e_ll_opt_enc_ms),
             xytext=(e_ll_bpp - 0.6, e_ll_opt_enc_ms + 12),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))

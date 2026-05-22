@@ -59,70 +59,68 @@ Kakadu `-cpu 0`. Both include file I/O.
 
 | Qstep | Qfactor | OJPH bpp | OJPH orig (s) | OJPH opt (s) | KDU (s) | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU (MP/s) | Speedup |
 |------:|--------:|----------|---------------|--------------|---------|-------------------|-----------------|------------|---------|
-| 0.15  | 10      | .38      | .0358         | .0292        | .0166   | 231               | 284             | 500        | +23%    |
-| 0.06  | 50      | .92      | .0471         | .0346        | .0183   | 176               | 240             | 453        | +36%    |
-| 0.038 | 70      | 1.31     | .0521         | .0382        | .0192   | 159               | 217             | 432        | +36%    |
-| 0.025 | 80      | 1.75     | .0593         | .0416        | .0203   | 139               | 199             | 409        | +43%    |
-| 0.02  | 90      | 2.02     | .0619         | .0431        | .0208   | 133               | 192             | 399        | +44%    |
-| 0.011 | 95      | 2.88     | .0724         | .0494        | .0226   | 114               | 168             | 367        | +47%    |
-| lossless | —    | 9.12     | .1336         | .0732        | .0275   | 62                | 113             | 302        | +83%    |
+| 0.15  | 10      | .38      | .0358         | .0282        | .0166   | 231               | 294             | 500        | +27%    |
+| 0.06  | 50      | .92      | .0471         | .0332        | .0183   | 176               | 250             | 453        | +42%    |
+| 0.038 | 70      | 1.31     | .0521         | .0369        | .0192   | 159               | 225             | 432        | +41%    |
+| 0.025 | 80      | 1.75     | .0593         | .0391        | .0203   | 139               | 212             | 409        | +52%    |
+| 0.02  | 90      | 2.02     | .0619         | .0405        | .0208   | 133               | 205             | 399        | +53%    |
+| 0.011 | 95      | 2.88     | .0724         | .0460        | .0226   | 114               | 180             | 367        | +57%    |
+| lossless | —    | 9.12     | .1336         | .0600        | .0275   | 62                | 138             | 302        | +123%   |
 
 ### Decoding (optimized)
 
 | Qstep | Qfactor | OJPH bpp | OJPH orig (s) | OJPH opt (s) | KDU (s) | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU (MP/s) |
 |------:|--------:|----------|---------------|--------------|---------|-------------------|-----------------|------------|
-| 0.15  | 10      | .38      | .0310         | .0291        | .0286   | 267               | 285             | 290        |
-| 0.06  | 50      | .92      | .0374         | .0361        | .0320   | 221               | 230             | 259        |
-| 0.038 | 70      | 1.31     | .0421         | .0394        | .0333   | 197               | 211             | 249        |
-| 0.025 | 80      | 1.75     | .0450         | .0437        | .0345   | 184               | 190             | 240        |
-| 0.02  | 90      | 2.02     | .0466         | .0451        | .0361   | 177               | 184             | 229        |
-| 0.011 | 95      | 2.88     | .0523         | .0504        | .0385   | 158               | 165             | 215        |
-| lossless | —    | 9.12     | .0760         | .0719        | .0510   | 109               | 115             | 163        |
+| 0.15  | 10      | .38      | .0310         | .0294        | .0286   | 267               | 282             | 290        |
+| 0.06  | 50      | .92      | .0374         | .0367        | .0320   | 221               | 226             | 259        |
+| 0.038 | 70      | 1.31     | .0421         | .0398        | .0333   | 197               | 208             | 249        |
+| 0.025 | 80      | 1.75     | .0450         | .0431        | .0345   | 184               | 192             | 240        |
+| 0.02  | 90      | 2.02     | .0466         | .0450        | .0361   | 177               | 184             | 229        |
+| 0.011 | 95      | 2.88     | .0523         | .0502        | .0385   | 158               | 165             | 215        |
+| lossless | —    | 9.12     | .0760         | .0713        | .0510   | 109               | 116             | 163        |
 
 ### Summary (updated)
 
 | Metric | JPEG | OJPH (orig) | OJPH (opt) | Kakadu |
 |--------|-----:|------------:|-----------:|-------:|
-| Avg encode throughput (MP/s), lossy | 391 | 159 | 217 | 427 |
-| Encode throughput (MP/s), lossless | — | 62 | 113 | 302 |
-| Avg decode throughput (MP/s), lossy | 319 | 201 | 211 | 247 |
-| Decode throughput (MP/s), lossless | — | 109 | 115 | 163 |
+| Avg encode throughput (MP/s), lossy | 391 | 159 | 228 | 427 |
+| Encode throughput (MP/s), lossless | — | 62 | 138 | 302 |
+| Avg decode throughput (MP/s), lossy | 319 | 201 | 210 | 247 |
+| Decode throughput (MP/s), lossless | — | 109 | 116 | 163 |
 
 | Comparison (lossy avg) | Encode | Decode |
 |------------------------|-------:|-------:|
-| Kakadu / OJPH (opt)    | 1.97x  | 1.17x  |
+| Kakadu / OJPH (opt)    | 1.87x  | 1.18x  |
 | Kakadu / OJPH (orig)   | 2.69x  | 1.23x  |
 
 | Comparison (lossless)  | Encode | Decode |
 |------------------------|-------:|-------:|
-| Kakadu / OJPH (opt)    | 2.67x  | 1.42x  |
+| Kakadu / OJPH (opt)    | 2.19x  | 1.41x  |
 | Kakadu / OJPH (orig)   | 4.87x  | 1.50x  |
 
 ### Optimization impact by operating point
 
-The encoder speedup is **strongest at high bitrates and lossless** (83% for
-lossless, 23-47% at lossy operating points). The optimizations are purely
-algorithmic (AVX-512 encoder, branchless drains, run-length MEL, NASM
-MagSgn). A controlled sweep of elastic allocator chunk sizes (64 KiB to
-32 MiB, with and without doubling growth) showed no measurable performance
-difference — the allocator is not a bottleneck.
+The encoder speedup is **strongest at high bitrates and lossless** (123% for
+lossless, 27-57% at lossy operating points). The optimizations are purely
+algorithmic (AVX-512 encoder, branchless VLC drain, run-length MEL, NASM
+MagSgn). The branchless VLC drain alone contributed +16-22% on lossless
+by eliminating 58% of branch misses (3.62% miss rate → 1.72%).
 
-Decoder optimization is modest (3-6% improvement at most operating points).
-The encoder-focused optimizations do not significantly change decode
-performance, which is expected since they target different code paths.
+Decoder optimization is modest since the encoder-focused changes target
+different code paths.
 
 ### Remaining gap to Kakadu
 
 | Mode | Gap (Kakadu/OJPH) | Target |
 |------|------------------:|-------:|
-| Lossy encode (avg) | 1.97x | 1.0x |
-| Lossless encode | 2.67x | 1.0x |
-| Lossy decode (avg) | 1.17x | 1.0x |
-| Lossless decode | 1.42x | 1.0x |
+| Lossy encode (avg) | 1.87x | 1.0x |
+| Lossless encode | 2.19x | 1.0x |
+| Lossy decode (avg) | 1.18x | 1.0x |
+| Lossless decode | 1.41x | 1.0x |
 
-The decode gap is close (1.17x for lossy). The main opportunity remains
-in encoding, where a ~2x gap persists. The codeblock encoder
-(`encode_codeblock`) remains the dominant cost center.
+The lossless encode gap narrowed from 2.67x to 2.19x with the branchless
+VLC drain. The codeblock encoder (`encode_codeblock`) remains the dominant
+cost center at ~28% of total encode time.
 
 ## ElephantDream_4K (16-bit, 4096x2160)
 
@@ -136,18 +134,18 @@ in encoding, where a ~2x gap persists. The codeblock encoder
 
 | Qstep | bpp | OJPH orig (s) | OJPH opt (s) | KDU (s) | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU (MP/s) | Speedup | Gap |
 |------:|----:|--------------:|-------------:|--------:|-----------------:|----------------:|-----------:|--------:|----:|
-| 0.5   | 0.02 | .0241       | .0241        | .0259   | 366              | 367             | 341        | 0%      | 0.93x |
-| 0.3   | 0.03 | .0252       | .0250        | .0261   | 351              | 353             | 339        | +1%     | 0.96x |
-| 0.2   | 0.05 | .0270       | .0265        | .0265   | 327              | 334             | 333        | +2%     | 1.00x |
-| 0.15  | 0.08 | .0287       | .0279        | .0265   | 308              | 317             | 334        | +3%     | 1.05x |
-| 0.1   | 0.13 | .0317       | .0295        | .0276   | 278              | 300             | 320        | +7%     | 1.07x |
-| 0.07  | 0.20 | .0347       | .0322        | .0283   | 255              | 275             | 312        | +8%     | 1.14x |
-| 0.05  | 0.29 | .0375       | .0334        | .0283   | 235              | 265             | 312        | +12%    | 1.18x |
-| 0.03  | 0.44 | .0416       | .0356        | .0290   | 212              | 248             | 304        | +17%    | 1.23x |
-| 0.02  | 0.67 | .0454       | .0370        | .0296   | 194              | 239             | 298        | +23%    | 1.25x |
-| 0.01  | 1.10 | .0494       | .0395        | .0300   | 178              | 224             | 294        | +25%    | 1.31x |
-| 0.005 | 1.46 | .0515       | .0411        | .0304   | 171              | 215             | 291        | +25%    | 1.35x |
-| lossless | 18.54 | .1575  | .0923        | .0500   | 56               | 95              | 176        | +71%    | 1.85x |
+| 0.5   | 0.02 | .0241       | .0235        | .0258   | 366              | 376             | 343        | +3%     | 0.91x |
+| 0.3   | 0.03 | .0252       | .0249        | .0262   | 351              | 355             | 338        | +1%     | 0.95x |
+| 0.2   | 0.05 | .0270       | .0260        | .0266   | 327              | 340             | 333        | +4%     | 0.98x |
+| 0.15  | 0.08 | .0287       | .0275        | .0266   | 308              | 322             | 333        | +4%     | 1.03x |
+| 0.1   | 0.13 | .0317       | .0292        | .0273   | 278              | 303             | 324        | +9%     | 1.07x |
+| 0.07  | 0.20 | .0347       | .0317        | .0282   | 255              | 279             | 314        | +9%     | 1.13x |
+| 0.05  | 0.29 | .0375       | .0326        | .0280   | 235              | 271             | 316        | +15%    | 1.17x |
+| 0.03  | 0.44 | .0416       | .0346        | .0293   | 212              | 256             | 302        | +20%    | 1.18x |
+| 0.02  | 0.67 | .0454       | .0357        | .0296   | 194              | 248             | 299        | +27%    | 1.21x |
+| 0.01  | 1.10 | .0494       | .0373        | .0302   | 178              | 237             | 293        | +32%    | 1.24x |
+| 0.005 | 1.46 | .0515       | .0389        | .0307   | 171              | 227             | 288        | +32%    | 1.27x |
+| lossless | 18.54 | .1575  | .0795        | .0496   | 56               | 111             | 178        | +98%    | 1.60x |
 
 ### Decoding (ElephantDream_4K)
 
@@ -156,18 +154,18 @@ OpenJPH `Elapsed time` includes PPM writing.
 
 | Qstep | bpp | OJPH orig (s) | OJPH opt (s) | KDU raw (s) | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU raw (MP/s) | Gap |
 |------:|----:|--------------:|-------------:|------------:|-----------------:|----------------:|---------------:|----:|
-| 0.5   | 0.02 | .0271       | .0257        | .0346       | 327              | 344             | 256            | 0.74x |
-| 0.3   | 0.03 | .0282       | .0272        | .0341       | 313              | 325             | 259            | 0.80x |
-| 0.2   | 0.05 | .0299       | .0285        | .0354       | 295              | 310             | 249            | 0.80x |
-| 0.15  | 0.08 | .0310       | .0297        | .0359       | 285              | 298             | 246            | 0.83x |
-| 0.1   | 0.13 | .0338       | .0319        | .0367       | 261              | 277             | 241            | 0.87x |
-| 0.07  | 0.20 | .0360       | .0349        | .0374       | 245              | 253             | 236            | 0.93x |
-| 0.05  | 0.29 | .0380       | .0371        | .0378       | 233              | 238             | 233            | 0.98x |
-| 0.03  | 0.44 | .0410       | .0392        | .0401       | 215              | 225             | 220            | 0.98x |
-| 0.02  | 0.67 | .0432       | .0416        | .0403       | 204              | 212             | 219            | 1.03x |
-| 0.01  | 1.10 | .0452       | .0438        | .0417       | 195              | 201             | 212            | 1.05x |
-| 0.005 | 1.46 | .0462       | .0447        | .0424       | 191              | 197             | 208            | 1.06x |
-| lossless | 18.54 | .1056  | .0979        | .0581       | 83               | 90              | 152            | 1.69x |
+| 0.5   | 0.02 | .0271       | .0265        | .0340       | 327              | 334             | 260            | 0.78x |
+| 0.3   | 0.03 | .0282       | .0269        | .0344       | 313              | 329             | 257            | 0.78x |
+| 0.2   | 0.05 | .0299       | .0285        | .0350       | 295              | 310             | 253            | 0.82x |
+| 0.15  | 0.08 | .0310       | .0303        | .0354       | 285              | 292             | 250            | 0.86x |
+| 0.1   | 0.13 | .0338       | .0322        | .0368       | 261              | 275             | 240            | 0.87x |
+| 0.07  | 0.20 | .0360       | .0351        | .0374       | 245              | 252             | 237            | 0.94x |
+| 0.05  | 0.29 | .0380       | .0366        | .0383       | 233              | 242             | 231            | 0.95x |
+| 0.03  | 0.44 | .0410       | .0392        | .0396       | 215              | 226             | 223            | 0.99x |
+| 0.02  | 0.67 | .0432       | .0423        | .0403       | 204              | 209             | 220            | 1.05x |
+| 0.01  | 1.10 | .0452       | .0438        | .0407       | 195              | 202             | 217            | 1.07x |
+| 0.005 | 1.46 | .0462       | .0455        | .0412       | 191              | 194             | 215            | 1.11x |
+| lossless | 18.54 | .1056  | .0984        | .0578       | 83               | 90              | 153            | 1.70x |
 
 Note: Gap < 1.0x means OpenJPH is faster than Kakadu. OpenJPH decode
 includes PPM writing overhead while KDU raw does not, so the actual
@@ -177,17 +175,16 @@ OJPH advantage at low bitrates is even larger.
 
 | Metric | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU (MP/s) | Gap (KDU/opt) |
 |--------|------------------:|----------------:|-----------:|---------------:|
-| Avg encode throughput, lossy | 264 | 285 | 316 | 1.11x |
-| Encode throughput, lossless | 56 | 95 | 176 | 1.85x |
-| Avg decode throughput, lossy (KDU raw) | 262 | 271 | 237 | **0.88x** |
-| Decode throughput, lossless (KDU raw) | 83 | 90 | 152 | 1.69x |
+| Avg encode throughput, lossy | 261 | 292 | 317 | 1.09x |
+| Encode throughput, lossless | 56 | 111 | 178 | 1.60x |
+| Avg decode throughput, lossy (KDU raw) | 260 | 260 | 237 | **0.91x** |
+| Decode throughput, lossless (KDU raw) | 83 | 90 | 153 | 1.70x |
 
-OpenJPH opt is **faster than Kakadu for lossy 16-bit decoding** (0.88x gap
-= OJPH 14% faster on average), even with OJPH including PPM write overhead.
-The encoding gap is 1.11x for lossy average — much closer than the 1.97x
-gap on 8-bit. At very low bitrates (Qstep >= 0.2), OpenJPH encoding is
-**equal to or faster than** Kakadu. Lossless encode/decode gaps are
-1.85x/1.69x.
+OpenJPH opt is **faster than Kakadu for lossy 16-bit decoding** (0.91x gap
+= OJPH 10% faster on average), even with OJPH including PPM write overhead.
+The encoding gap is 1.09x for lossy average. At very low bitrates
+(Qstep >= 0.2), OpenJPH encoding is **faster than Kakadu**. Lossless
+encode gap narrowed to 1.60x (from 1.85x before branchless VLC drain).
 
 ## Plots
 
@@ -196,18 +193,17 @@ gap on 8-bit. At very low bitrates (Qstep >= 0.2), OpenJPH encoding is
 
 ## Observations
 
-- **Encoding (8-bit):** Kakadu's HT block encoder is ~2.0x faster than
-  optimized OpenJPH for lossy (down from 2.69x original). The gap narrows at
-  lower bitrates where fixed overhead dominates.
-- **Encoding (16-bit):** Kakadu gap is only 1.11x for lossy average. At very
-  low bitrates (Qstep >= 0.2), OpenJPH is **equal to or faster than** Kakadu.
-  Gap grows to 1.35x at high bitrates and 1.85x for lossless.
-- **Lossless encoding:** 113 MP/s on 8-bit (+83% vs original), 95 MP/s on
-  16-bit (+71%). The codeblock encoder remains the dominant cost center.
-- **Decoding (8-bit):** Kakadu leads by ~1.17x for lossy, 1.42x for lossless.
+- **Encoding (8-bit):** Kakadu is 1.87x faster for lossy (down from 2.69x
+  original). Lossless gap narrowed to 2.19x (+123% speedup vs original).
+- **Encoding (16-bit):** Kakadu gap is only 1.09x for lossy average. At
+  low bitrates (Qstep >= 0.2), OpenJPH is **faster than Kakadu**. Lossless
+  gap narrowed to 1.60x (+98% speedup vs original).
+- **Lossless encoding:** 138 MP/s on 8-bit (+123% vs original), 111 MP/s on
+  16-bit (+98%). The codeblock encoder remains the dominant cost center.
+- **Decoding (8-bit):** Kakadu leads by ~1.18x for lossy, 1.41x for lossless.
 - **Decoding (16-bit):** OpenJPH opt is **faster than Kakadu** for lossy
-  decoding (0.88x gap = OJPH 14% faster on average), even though OJPH timing
+  decoding (0.91x gap = OJPH 10% faster on average), even though OJPH timing
   includes PPM write overhead while KDU raw does not. Only lossless decode
-  shows Kakadu ahead (1.69x).
+  shows Kakadu ahead (1.70x).
 - **File-size parity:** With the same Qstep and `-no_weights`, both HTJ2K
   encoders produce virtually identical file sizes.
