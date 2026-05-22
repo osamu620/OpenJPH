@@ -220,11 +220,14 @@ fig2.suptitle(
     'Image: ElephantDream_4K.ppm (4096x2160, 16-bit RGB) — Single-threaded',
     fontsize=13, fontweight='bold'
 )
-gs = fig2.add_gridspec(2, 4, width_ratios=WIDTH_RATIO + WIDTH_RATIO,
-                       hspace=0.30, wspace=0.08)
+outer = fig2.add_gridspec(1, 2, wspace=0.28)
+left_gs = outer[0].subgridspec(2, 2, width_ratios=WIDTH_RATIO,
+                                hspace=0.30, wspace=0.06)
+right_gs = outer[1].subgridspec(2, 2, width_ratios=WIDTH_RATIO,
+                                 hspace=0.30, wspace=0.06)
 
 # -- Encoding Throughput (top-left) --
-al, ar = make_broken_pair(fig2, [gs[0, 0], gs[0, 1]], 'Encoding Throughput')
+al, ar = make_broken_pair(fig2, [left_gs[0, 0], left_gs[0, 1]], 'Encoding Throughput')
 plot_on_pair(al, ar,
     [(e_bpp, e_orig_enc_mps, 's-',  C_OJPH,     'OpenJPH orig', MK_NONE),
      (e_bpp, e_opt_enc_mps,  's--', C_OJPH_OPT, 'OpenJPH opt',  MK_OPEN),
@@ -239,7 +242,7 @@ ar.annotate('+98%', xy=(e_ll_bpp, e_ll_opt_enc_mps),
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
 
 # -- Decoding Throughput (top-right) --
-al, ar = make_broken_pair(fig2, [gs[0, 2], gs[0, 3]], 'Decoding Throughput')
+al, ar = make_broken_pair(fig2, [right_gs[0, 0], right_gs[0, 1]], 'Decoding Throughput')
 plot_on_pair(al, ar,
     [(e_bpp, e_orig_dec_mps, 's-',  C_OJPH,     'OpenJPH orig', MK_NONE),
      (e_bpp, e_opt_dec_mps,  's--', C_OJPH_OPT, 'OpenJPH opt',  MK_OPEN),
@@ -250,7 +253,7 @@ plot_on_pair(al, ar,
     'upper right')
 
 # -- Encoding Time (bottom-left) --
-al, ar = make_broken_pair(fig2, [gs[1, 0], gs[1, 1]], 'Encoding Time', is_time=True)
+al, ar = make_broken_pair(fig2, [left_gs[1, 0], left_gs[1, 1]], 'Encoding Time', is_time=True)
 plot_on_pair(al, ar,
     [(e_bpp, e_orig_enc_ms, 's-',  C_OJPH,     'OpenJPH orig', MK_NONE),
      (e_bpp, e_opt_enc_ms,  's--', C_OJPH_OPT, 'OpenJPH opt',  MK_OPEN),
@@ -265,7 +268,7 @@ ar.annotate('+98%', xy=(e_ll_bpp, e_ll_opt_enc_ms),
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
 
 # -- Decoding Time (bottom-right) --
-al, ar = make_broken_pair(fig2, [gs[1, 2], gs[1, 3]], 'Decoding Time', is_time=True)
+al, ar = make_broken_pair(fig2, [right_gs[1, 0], right_gs[1, 1]], 'Decoding Time', is_time=True)
 plot_on_pair(al, ar,
     [(e_bpp, e_orig_dec_ms, 's-',  C_OJPH,     'OpenJPH orig', MK_NONE),
      (e_bpp, e_opt_dec_ms,  's--', C_OJPH_OPT, 'OpenJPH opt',  MK_OPEN),
