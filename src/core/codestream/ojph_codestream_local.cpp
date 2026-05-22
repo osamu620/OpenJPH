@@ -58,8 +58,7 @@ namespace ojph {
     : precinct_scratch(NULL), allocator(NULL), elastic_alloc(NULL)
     {
       allocator = new mem_fixed_allocator;
-      // Larger initial chunk reduces allocator churn for large 4K encodes.
-      elastic_alloc = new mem_elastic_allocator(8u * 1024u * 1024u); // 8 MiB
+      elastic_alloc = new mem_elastic_allocator(1048576); // 1 megabyte
 
       init_colour_transform_functions();
       init_wavelet_transform_functions();

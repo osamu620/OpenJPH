@@ -222,9 +222,7 @@ namespace ojph {
 
   public:
     mem_elastic_allocator(ui32 chunk_size)
-    : chunk_size(chunk_size), cur_chunk_size(chunk_size),
-      max_chunk_size(chunk_size > (16u * 1024u * 1024u)
-                       ? chunk_size : (16u * 1024u * 1024u))
+    : chunk_size(chunk_size)
     { cur_store = store = avail = NULL; total_allocated = 0; }
 
     ~mem_elastic_allocator()
@@ -283,8 +281,6 @@ namespace ojph {
     stores_list *avail;
     size_t total_allocated;
     const ui32 chunk_size;
-    ui32 cur_chunk_size;
-    const ui32 max_chunk_size;
   };
 
 
