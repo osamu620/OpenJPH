@@ -48,21 +48,25 @@ e_bpp = [0.02, 0.03, 0.05, 0.08, 0.13, 0.20, 0.29, 0.44, 0.67, 1.10, 1.46]
 
 e_orig_enc_mps = [366, 351, 327, 308, 278, 255, 235, 212, 194, 178, 171]
 e_opt_enc_mps  = [367, 353, 334, 317, 300, 275, 265, 248, 239, 224, 215]
+e_kdu_enc_mps  = [341, 339, 333, 334, 320, 312, 312, 304, 298, 294, 291]
 
 e_orig_enc_ms = [24.1, 25.2, 27.0, 28.7, 31.7, 34.7, 37.5, 41.6, 45.4, 49.4, 51.5]
 e_opt_enc_ms  = [24.1, 25.0, 26.5, 27.9, 29.5, 32.2, 33.4, 35.6, 37.0, 39.5, 41.1]
+e_kdu_enc_ms  = [25.9, 26.1, 26.5, 26.5, 27.6, 28.3, 28.3, 29.0, 29.6, 30.0, 30.4]
 
 e_orig_dec_mps = [327, 313, 295, 285, 261, 245, 233, 215, 204, 195, 191]
 e_opt_dec_mps  = [344, 325, 310, 298, 277, 253, 238, 225, 212, 201, 197]
+e_kdu_dec_mps  = [256, 259, 249, 246, 241, 236, 233, 220, 219, 212, 208]
 
 e_orig_dec_ms = [27.1, 28.2, 29.9, 31.0, 33.8, 36.0, 38.0, 41.0, 43.2, 45.2, 46.2]
 e_opt_dec_ms  = [25.7, 27.2, 28.5, 29.7, 31.9, 34.9, 37.1, 39.2, 41.4, 43.8, 44.7]
+e_kdu_dec_ms  = [34.6, 34.1, 35.4, 35.9, 36.7, 37.4, 37.8, 40.1, 40.3, 41.7, 42.4]
 
 e_ll_bpp = 18.54
-e_ll_orig_enc_mps, e_ll_opt_enc_mps = 56, 95
-e_ll_orig_enc_ms,  e_ll_opt_enc_ms  = 157.5, 92.3
-e_ll_orig_dec_mps, e_ll_opt_dec_mps = 83, 90
-e_ll_orig_dec_ms,  e_ll_opt_dec_ms  = 105.6, 97.9
+e_ll_orig_enc_mps, e_ll_opt_enc_mps, e_ll_kdu_enc_mps = 56, 95, 176
+e_ll_orig_enc_ms,  e_ll_opt_enc_ms,  e_ll_kdu_enc_ms  = 157.5, 92.3, 50.0
+e_ll_orig_dec_mps, e_ll_opt_dec_mps, e_ll_kdu_dec_mps = 83, 90, 152
+e_ll_orig_dec_ms,  e_ll_opt_dec_ms,  e_ll_kdu_dec_ms  = 105.6, 97.9, 58.1
 
 # ============================================================
 # Colors
@@ -160,12 +164,12 @@ plt.savefig('benchmark_plot.png', dpi=150, bbox_inches='tight')
 print('Saved benchmark_plot.png')
 
 # ============================================================
-# Plot 2: 16-bit (ElephantDream_4K.ppm) — OpenJPH orig vs opt
+# Plot 2: 16-bit (ElephantDream_4K.ppm) — OpenJPH vs Kakadu
 # ============================================================
 
 fig2, axes2 = plt.subplots(2, 2, figsize=(14, 10))
 fig2.suptitle(
-    'OpenJPH Optimization: Original vs Optimized\n'
+    'HTJ2K Benchmark: OpenJPH vs Kakadu\n'
     'Image: ElephantDream_4K.ppm (4096x2160, 16-bit RGB) — Single-threaded',
     fontsize=13, fontweight='bold'
 )
@@ -173,8 +177,10 @@ fig2.suptitle(
 ax = axes2[0, 0]
 ax.plot(e_bpp, e_orig_enc_mps, 's-', color=C_OJPH, label='OpenJPH orig', ms=ms, lw=lw)
 ax.plot(e_bpp, e_opt_enc_mps, 's--', color=C_OJPH_OPT, label='OpenJPH opt', ms=ms, lw=lw, markerfacecolor='none', markeredgewidth=2)
+ax.plot(e_bpp, e_kdu_enc_mps, '^-', color=C_KDU, label='Kakadu', ms=ms, lw=lw)
 ax.plot(e_ll_bpp, e_ll_orig_enc_mps, 's', color=C_OJPH, ms=ms+2)
 ax.plot(e_ll_bpp, e_ll_opt_enc_mps, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
+ax.plot(e_ll_bpp, e_ll_kdu_enc_mps, '^', color=C_KDU, ms=ms+2)
 ax.annotate('+71%', xy=(e_ll_bpp, e_ll_opt_enc_mps),
             xytext=(e_ll_bpp - 3.5, e_ll_opt_enc_mps + 20),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
@@ -189,8 +195,10 @@ ax.set_xlim(0, 20)
 ax = axes2[0, 1]
 ax.plot(e_bpp, e_orig_dec_mps, 's-', color=C_OJPH, label='OpenJPH orig', ms=ms, lw=lw)
 ax.plot(e_bpp, e_opt_dec_mps, 's--', color=C_OJPH_OPT, label='OpenJPH opt', ms=ms, lw=lw, markerfacecolor='none', markeredgewidth=2)
+ax.plot(e_bpp, e_kdu_dec_mps, '^-', color=C_KDU, label='Kakadu (raw)', ms=ms, lw=lw)
 ax.plot(e_ll_bpp, e_ll_orig_dec_mps, 's', color=C_OJPH, ms=ms+2)
 ax.plot(e_ll_bpp, e_ll_opt_dec_mps, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
+ax.plot(e_ll_bpp, e_ll_kdu_dec_mps, '^', color=C_KDU, ms=ms+2)
 ax.set_xlabel('Bitrate (bpp)')
 ax.set_ylabel('Throughput (MP/s)')
 ax.set_title('Decoding Throughput')
@@ -201,8 +209,10 @@ ax.set_xlim(0, 20)
 ax = axes2[1, 0]
 ax.plot(e_bpp, e_orig_enc_ms, 's-', color=C_OJPH, label='OpenJPH orig', ms=ms, lw=lw)
 ax.plot(e_bpp, e_opt_enc_ms, 's--', color=C_OJPH_OPT, label='OpenJPH opt', ms=ms, lw=lw, markerfacecolor='none', markeredgewidth=2)
+ax.plot(e_bpp, e_kdu_enc_ms, '^-', color=C_KDU, label='Kakadu', ms=ms, lw=lw)
 ax.plot(e_ll_bpp, e_ll_orig_enc_ms, 's', color=C_OJPH, ms=ms+2)
 ax.plot(e_ll_bpp, e_ll_opt_enc_ms, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
+ax.plot(e_ll_bpp, e_ll_kdu_enc_ms, '^', color=C_KDU, ms=ms+2)
 ax.annotate('+71%', xy=(e_ll_bpp, e_ll_opt_enc_ms),
             xytext=(e_ll_bpp - 3.5, e_ll_opt_enc_ms + 12),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
@@ -217,8 +227,10 @@ ax.set_xlim(0, 20)
 ax = axes2[1, 1]
 ax.plot(e_bpp, e_orig_dec_ms, 's-', color=C_OJPH, label='OpenJPH orig', ms=ms, lw=lw)
 ax.plot(e_bpp, e_opt_dec_ms, 's--', color=C_OJPH_OPT, label='OpenJPH opt', ms=ms, lw=lw, markerfacecolor='none', markeredgewidth=2)
+ax.plot(e_bpp, e_kdu_dec_ms, '^-', color=C_KDU, label='Kakadu (raw)', ms=ms, lw=lw)
 ax.plot(e_ll_bpp, e_ll_orig_dec_ms, 's', color=C_OJPH, ms=ms+2)
 ax.plot(e_ll_bpp, e_ll_opt_dec_ms, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
+ax.plot(e_ll_bpp, e_ll_kdu_dec_ms, '^', color=C_KDU, ms=ms+2)
 ax.set_xlabel('Bitrate (bpp)')
 ax.set_ylabel('Time (ms)')
 ax.set_title('Decoding Time')
