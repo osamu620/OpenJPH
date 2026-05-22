@@ -165,79 +165,115 @@ print('Saved benchmark_plot.png')
 
 # ============================================================
 # Plot 2: 16-bit (ElephantDream_4K.ppm) — OpenJPH vs Kakadu
+#         Broken x-axis: lossy (0–2 bpp) | lossless (~18.5 bpp)
 # ============================================================
 
-fig2, axes2 = plt.subplots(2, 2, figsize=(14, 10))
+LOSSY_XLIM = (-0.05, 2.0)
+LL_XLIM    = (17.5, 19.5)
+WIDTH_RATIO = [4, 1]
+
+def make_broken_pair(fig, gs_row, title, is_time=False):
+    ax_l = fig.add_subplot(gs_row[0])
+    ax_r = fig.add_subplot(gs_row[1])
+    for a in (ax_l, ax_r):
+        a.grid(True, alpha=0.3)
+    ax_l.set_xlim(*LOSSY_XLIM)
+    ax_r.set_xlim(*LL_XLIM)
+    ax_r.set_yticklabels([])
+    ax_r.tick_params(axis='y', length=0)
+    ax_l.spines['right'].set_visible(False)
+    ax_r.spines['left'].set_visible(False)
+    d = 0.012
+    kwargs = dict(transform=ax_l.transAxes, color='k', clip_on=False, lw=1)
+    ax_l.plot((1 - d, 1 + d), (-d, +d), **kwargs)
+    ax_l.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
+    kwargs['transform'] = ax_r.transAxes
+    ax_r.plot((-d, +d), (-d, +d), **kwargs)
+    ax_r.plot((-d, +d), (1 - d, 1 + d), **kwargs)
+    ax_l.set_title(title)
+    ax_l.set_xlabel('Bitrate (bpp)')
+    ax_r.set_xlabel('')
+    ax_l.set_ylabel('Time (ms)' if is_time else 'Throughput (MP/s)')
+    return ax_l, ax_r
+
+def plot_on_pair(ax_l, ax_r, datasets, ll_points, legend_loc):
+    for bpp, yvals, style, color, label, mkw in datasets:
+        ax_l.plot(bpp, yvals, style, color=color, label=label, ms=ms, lw=lw, **mkw)
+        ax_r.plot(bpp, yvals, style, color=color, ms=ms, lw=lw, **mkw)
+    for x, y, marker, color, mkw in ll_points:
+        ax_l.plot(x, y, marker, color=color, ms=ms+2, **mkw)
+        ax_r.plot(x, y, marker, color=color, ms=ms+2, **mkw)
+    yl = ax_l.get_ylim()
+    yr = ax_r.get_ylim()
+    ymin = min(yl[0], yr[0])
+    ymax = max(yl[1], yr[1])
+    ax_l.set_ylim(ymin, ymax)
+    ax_r.set_ylim(ymin, ymax)
+    ax_l.legend(fontsize=8, loc=legend_loc)
+
+MK_NONE = {}
+MK_OPEN = dict(markerfacecolor='none', markeredgewidth=2)
+
+fig2 = plt.figure(figsize=(14, 10))
 fig2.suptitle(
     'HTJ2K Benchmark: OpenJPH vs Kakadu\n'
     'Image: ElephantDream_4K.ppm (4096x2160, 16-bit RGB) — Single-threaded',
     fontsize=13, fontweight='bold'
 )
+gs = fig2.add_gridspec(2, 4, width_ratios=WIDTH_RATIO + WIDTH_RATIO,
+                       hspace=0.30, wspace=0.08)
 
-ax = axes2[0, 0]
-ax.plot(e_bpp, e_orig_enc_mps, 's-', color=C_OJPH, label='OpenJPH orig', ms=ms, lw=lw)
-ax.plot(e_bpp, e_opt_enc_mps, 's--', color=C_OJPH_OPT, label='OpenJPH opt', ms=ms, lw=lw, markerfacecolor='none', markeredgewidth=2)
-ax.plot(e_bpp, e_kdu_enc_mps, '^-', color=C_KDU, label='Kakadu', ms=ms, lw=lw)
-ax.plot(e_ll_bpp, e_ll_orig_enc_mps, 's', color=C_OJPH, ms=ms+2)
-ax.plot(e_ll_bpp, e_ll_opt_enc_mps, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
-ax.plot(e_ll_bpp, e_ll_kdu_enc_mps, '^', color=C_KDU, ms=ms+2)
-ax.annotate('+71%', xy=(e_ll_bpp, e_ll_opt_enc_mps),
-            xytext=(e_ll_bpp - 3.5, e_ll_opt_enc_mps + 20),
+# -- Encoding Throughput (top-left) --
+al, ar = make_broken_pair(fig2, [gs[0, 0], gs[0, 1]], 'Encoding Throughput')
+plot_on_pair(al, ar,
+    [(e_bpp, e_orig_enc_mps, 's-',  C_OJPH,     'OpenJPH orig', MK_NONE),
+     (e_bpp, e_opt_enc_mps,  's--', C_OJPH_OPT, 'OpenJPH opt',  MK_OPEN),
+     (e_bpp, e_kdu_enc_mps,  '^-',  C_KDU,      'Kakadu',        MK_NONE)],
+    [(e_ll_bpp, e_ll_orig_enc_mps, 's', C_OJPH,     MK_NONE),
+     (e_ll_bpp, e_ll_opt_enc_mps,  's', C_OJPH_OPT, MK_OPEN),
+     (e_ll_bpp, e_ll_kdu_enc_mps,  '^', C_KDU,      MK_NONE)],
+    'upper right')
+ar.annotate('+71%', xy=(e_ll_bpp, e_ll_opt_enc_mps),
+            xytext=(e_ll_bpp - 0.6, e_ll_opt_enc_mps + 25),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
-ax.set_xlabel('Bitrate (bpp)')
-ax.set_ylabel('Throughput (MP/s)')
-ax.set_title('Encoding Throughput')
-ax.legend(fontsize=8, loc='upper right')
-ax.grid(True, alpha=0.3)
-ax.set_xlim(0, 20)
 
-ax = axes2[0, 1]
-ax.plot(e_bpp, e_orig_dec_mps, 's-', color=C_OJPH, label='OpenJPH orig', ms=ms, lw=lw)
-ax.plot(e_bpp, e_opt_dec_mps, 's--', color=C_OJPH_OPT, label='OpenJPH opt', ms=ms, lw=lw, markerfacecolor='none', markeredgewidth=2)
-ax.plot(e_bpp, e_kdu_dec_mps, '^-', color=C_KDU, label='Kakadu (raw)', ms=ms, lw=lw)
-ax.plot(e_ll_bpp, e_ll_orig_dec_mps, 's', color=C_OJPH, ms=ms+2)
-ax.plot(e_ll_bpp, e_ll_opt_dec_mps, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
-ax.plot(e_ll_bpp, e_ll_kdu_dec_mps, '^', color=C_KDU, ms=ms+2)
-ax.set_xlabel('Bitrate (bpp)')
-ax.set_ylabel('Throughput (MP/s)')
-ax.set_title('Decoding Throughput')
-ax.legend(fontsize=8, loc='upper right')
-ax.grid(True, alpha=0.3)
-ax.set_xlim(0, 20)
+# -- Decoding Throughput (top-right) --
+al, ar = make_broken_pair(fig2, [gs[0, 2], gs[0, 3]], 'Decoding Throughput')
+plot_on_pair(al, ar,
+    [(e_bpp, e_orig_dec_mps, 's-',  C_OJPH,     'OpenJPH orig', MK_NONE),
+     (e_bpp, e_opt_dec_mps,  's--', C_OJPH_OPT, 'OpenJPH opt',  MK_OPEN),
+     (e_bpp, e_kdu_dec_mps,  '^-',  C_KDU,      'Kakadu (raw)',  MK_NONE)],
+    [(e_ll_bpp, e_ll_orig_dec_mps, 's', C_OJPH,     MK_NONE),
+     (e_ll_bpp, e_ll_opt_dec_mps,  's', C_OJPH_OPT, MK_OPEN),
+     (e_ll_bpp, e_ll_kdu_dec_mps,  '^', C_KDU,      MK_NONE)],
+    'upper right')
 
-ax = axes2[1, 0]
-ax.plot(e_bpp, e_orig_enc_ms, 's-', color=C_OJPH, label='OpenJPH orig', ms=ms, lw=lw)
-ax.plot(e_bpp, e_opt_enc_ms, 's--', color=C_OJPH_OPT, label='OpenJPH opt', ms=ms, lw=lw, markerfacecolor='none', markeredgewidth=2)
-ax.plot(e_bpp, e_kdu_enc_ms, '^-', color=C_KDU, label='Kakadu', ms=ms, lw=lw)
-ax.plot(e_ll_bpp, e_ll_orig_enc_ms, 's', color=C_OJPH, ms=ms+2)
-ax.plot(e_ll_bpp, e_ll_opt_enc_ms, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
-ax.plot(e_ll_bpp, e_ll_kdu_enc_ms, '^', color=C_KDU, ms=ms+2)
-ax.annotate('+71%', xy=(e_ll_bpp, e_ll_opt_enc_ms),
-            xytext=(e_ll_bpp - 3.5, e_ll_opt_enc_ms + 12),
+# -- Encoding Time (bottom-left) --
+al, ar = make_broken_pair(fig2, [gs[1, 0], gs[1, 1]], 'Encoding Time', is_time=True)
+plot_on_pair(al, ar,
+    [(e_bpp, e_orig_enc_ms, 's-',  C_OJPH,     'OpenJPH orig', MK_NONE),
+     (e_bpp, e_opt_enc_ms,  's--', C_OJPH_OPT, 'OpenJPH opt',  MK_OPEN),
+     (e_bpp, e_kdu_enc_ms,  '^-',  C_KDU,      'Kakadu',        MK_NONE)],
+    [(e_ll_bpp, e_ll_orig_enc_ms, 's', C_OJPH,     MK_NONE),
+     (e_ll_bpp, e_ll_opt_enc_ms,  's', C_OJPH_OPT, MK_OPEN),
+     (e_ll_bpp, e_ll_kdu_enc_ms,  '^', C_KDU,      MK_NONE)],
+    'upper left')
+ar.annotate('+71%', xy=(e_ll_bpp, e_ll_opt_enc_ms),
+            xytext=(e_ll_bpp - 0.6, e_ll_opt_enc_ms + 12),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
-ax.set_xlabel('Bitrate (bpp)')
-ax.set_ylabel('Time (ms)')
-ax.set_title('Encoding Time')
-ax.legend(fontsize=8, loc='upper left')
-ax.grid(True, alpha=0.3)
-ax.set_xlim(0, 20)
 
-ax = axes2[1, 1]
-ax.plot(e_bpp, e_orig_dec_ms, 's-', color=C_OJPH, label='OpenJPH orig', ms=ms, lw=lw)
-ax.plot(e_bpp, e_opt_dec_ms, 's--', color=C_OJPH_OPT, label='OpenJPH opt', ms=ms, lw=lw, markerfacecolor='none', markeredgewidth=2)
-ax.plot(e_bpp, e_kdu_dec_ms, '^-', color=C_KDU, label='Kakadu (raw)', ms=ms, lw=lw)
-ax.plot(e_ll_bpp, e_ll_orig_dec_ms, 's', color=C_OJPH, ms=ms+2)
-ax.plot(e_ll_bpp, e_ll_opt_dec_ms, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
-ax.plot(e_ll_bpp, e_ll_kdu_dec_ms, '^', color=C_KDU, ms=ms+2)
-ax.set_xlabel('Bitrate (bpp)')
-ax.set_ylabel('Time (ms)')
-ax.set_title('Decoding Time')
-ax.legend(fontsize=8, loc='upper left')
-ax.grid(True, alpha=0.3)
-ax.set_xlim(0, 20)
+# -- Decoding Time (bottom-right) --
+al, ar = make_broken_pair(fig2, [gs[1, 2], gs[1, 3]], 'Decoding Time', is_time=True)
+plot_on_pair(al, ar,
+    [(e_bpp, e_orig_dec_ms, 's-',  C_OJPH,     'OpenJPH orig', MK_NONE),
+     (e_bpp, e_opt_dec_ms,  's--', C_OJPH_OPT, 'OpenJPH opt',  MK_OPEN),
+     (e_bpp, e_kdu_dec_ms,  '^-',  C_KDU,      'Kakadu (raw)',  MK_NONE)],
+    [(e_ll_bpp, e_ll_orig_dec_ms, 's', C_OJPH,     MK_NONE),
+     (e_ll_bpp, e_ll_opt_dec_ms,  's', C_OJPH_OPT, MK_OPEN),
+     (e_ll_bpp, e_ll_kdu_dec_ms,  '^', C_KDU,      MK_NONE)],
+    'upper left')
 
-plt.tight_layout()
 plt.savefig('benchmark_plot_elephant.png', dpi=150, bbox_inches='tight')
 print('Saved benchmark_plot_elephant.png')
