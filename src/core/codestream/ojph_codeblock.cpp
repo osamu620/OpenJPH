@@ -46,6 +46,7 @@
 #include "ojph_codeblock.h"
 #include "ojph_subband.h"
 #include "ojph_resolution.h"
+#include "ojph_encode_timing_local.h"
 
 namespace ojph {
 
@@ -139,6 +140,9 @@ namespace ojph {
     //////////////////////////////////////////////////////////////////////////
     void codeblock::encode(mem_elastic_allocator *elastic)
     {
+      scoped_encode_timer timer(encode_timing_add_codeblock_encode_ns);
+      encode_timing_inc_codeblock_count();
+
       if (precision == BUF32)
       {
         ui32 mv = this->codeblock_functions.find_max_val32(max_val32);

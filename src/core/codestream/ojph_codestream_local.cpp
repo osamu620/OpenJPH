@@ -42,6 +42,7 @@
 #include "ojph_mem.h"
 #include "ojph_params.h"
 #include "ojph_codestream_local.h"
+#include "ojph_encode_timing_local.h"
 #include "ojph_tile.h"
 
 #include "../transform/ojph_colour.h"
@@ -57,7 +58,8 @@ namespace ojph {
     : precinct_scratch(NULL), allocator(NULL), elastic_alloc(NULL)
     {
       allocator = new mem_fixed_allocator;
-      elastic_alloc = new mem_elastic_allocator(1048576); // 1 megabyte
+      // Larger initial chunk reduces allocator churn for large 4K encodes.
+      elastic_alloc = new mem_elastic_allocator(8u * 1024u * 1024u); // 8 MiB
 
       init_colour_transform_functions();
       init_wavelet_transform_functions();
@@ -1130,6 +1132,7 @@ namespace ojph {
     //////////////////////////////////////////////////////////////////////////
     void codestream::flush()
     {
+      scoped_encode_timer timer(encode_timing_add_flush_ns);
       si32 repeat = (si32)num_tiles.area();
       for (si32 i = 0; i < repeat; ++i)
         tiles[i].prepare_for_flush();
@@ -1144,6 +1147,8 @@ namespace ojph {
       ui16 t = swap_byte(JP2K_MARKER::EOC);
       if (!outfile->write(&t, 2))
         OJPH_ERROR(0x00030071, "Error writing to file");
+
+      encode_timing_report_and_reset();
     }
 
     //////////////////////////////////////////////////////////////////////////

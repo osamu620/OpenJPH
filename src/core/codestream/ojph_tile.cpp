@@ -42,6 +42,7 @@
 #include "ojph_mem.h"
 #include "ojph_params.h"
 #include "ojph_codestream_local.h"
+#include "ojph_encode_timing_local.h"
 #include "ojph_tile.h"
 #include "ojph_tile_comp.h"
 
@@ -311,6 +312,9 @@ namespace ojph {
     //////////////////////////////////////////////////////////////////////////
     bool tile::push(line_buf *line, ui32 comp_num)
     {
+      scoped_encode_timer timer(encode_timing_add_tile_push_ns);
+      encode_timing_inc_input_line_count();
+
       constexpr ui8 type3 =
         param_nlt::nonlinearity::OJPH_NLT_BINARY_COMPLEMENT_NLT;
 

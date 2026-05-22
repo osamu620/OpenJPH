@@ -92,7 +92,7 @@ namespace ojph {
   mem_elastic_allocator::allocate(mem_elastic_allocator::stores_list** list,
                                   ui32 extended_bytes)
   {
-    ui32 bytes = ojph_max(extended_bytes, chunk_size);
+    ui32 bytes = ojph_max(extended_bytes, cur_chunk_size);
     if (avail != NULL && avail->orig_size >= bytes)
     {
       *list = avail;
@@ -105,7 +105,13 @@ namespace ojph {
       ui32 store_bytes = stores_list::eval_store_bytes(bytes);
       *list = (stores_list*) malloc(store_bytes);
       total_allocated += store_bytes;
-      return new (*list) stores_list(bytes);
+      stores_list *new_store = new (*list) stores_list(bytes);
+      if (extended_bytes <= cur_chunk_size && cur_chunk_size < max_chunk_size)
+      {
+        ui32 next = cur_chunk_size << 1;
+        cur_chunk_size = next < max_chunk_size ? next : max_chunk_size;
+      }
+      return new_store;
     }
   }
 
@@ -138,6 +144,7 @@ namespace ojph {
       p = &((*p)->next_store);
     *p = store;
     cur_store = store = NULL;
+    cur_chunk_size = chunk_size;
   }
 
 }

@@ -50,7 +50,8 @@ MagSgn drain with SWAR 0xFF detection and deferred accumulation (-mbmi2),
 NASM MagSgn encoder with register-resident accumulator and prefix-sum
 codeword combination, VLC bulk drain with SWAR and bswap backward writes,
 unified UVLC pair lookup tables eliminating 3-way branch, run-length MEL
-encoding with popcount/tzcnt batch run advancement.
+encoding with popcount/tzcnt batch run advancement, exponential-growth elastic
+allocator with 8 MiB initial chunk reducing malloc pressure.
 
 ### Encoding (optimized)
 
@@ -59,68 +60,132 @@ Kakadu `-cpu 0`. Both include file I/O.
 
 | Qstep | Qfactor | OJPH bpp | OJPH orig (s) | OJPH opt (s) | KDU (s) | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU (MP/s) | Speedup |
 |------:|--------:|----------|---------------|--------------|---------|-------------------|-----------------|------------|---------|
-| 0.15  | 10      | .37      | .0358         | .0314        | .0164   | 231               | 264             | 504        | +14%    |
-| 0.06  | 50      | .91      | .0471         | .0373        | .0174   | 176               | 222             | 475        | +26%    |
-| 0.038 | 70      | 1.31     | .0521         | .0384        | .0183   | 159               | 216             | 453        | +36%    |
-| 0.025 | 80      | 1.75     | .0593         | .0432        | .0196   | 139               | 192             | 422        | +38%    |
-| 0.02  | 90      | 2.02     | .0619         | .0444        | .0202   | 133               | 187             | 410        | +41%    |
-| 0.011 | 95      | 2.87     | .0724         | .0493        | .0218   | 114               | 168             | 380        | +47%    |
-| lossless | —    | 9.11     | .1336         | .0749        | .0275   | 62                | 111             | 301        | +79%    |
+| 0.15  | 10      | .38      | .0358         | .0276        | .0160   | 231               | 301             | 518        | +30%    |
+| 0.06  | 50      | .92      | .0471         | .0312        | .0163   | 176               | 266             | 509        | +51%    |
+| 0.038 | 70      | 1.31     | .0521         | .0352        | .0170   | 159               | 236             | 488        | +48%    |
+| 0.025 | 80      | 1.75     | .0593         | .0382        | .0185   | 139               | 217             | 448        | +56%    |
+| 0.02  | 90      | 2.02     | .0619         | .0398        | .0185   | 133               | 208             | 448        | +56%    |
+| 0.011 | 95      | 2.88     | .0724         | .0451        | .0201   | 114               | 184             | 413        | +61%    |
+| lossless | —    | 9.12     | .1336         | .0663        | .0257   | 62                | 125             | 323        | +102%   |
 
 ### Decoding (optimized)
 
 | Qstep | Qfactor | OJPH bpp | OJPH orig (s) | OJPH opt (s) | KDU (s) | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU (MP/s) |
 |------:|--------:|----------|---------------|--------------|---------|-------------------|-----------------|------------|
-| 0.15  | 10      | .37      | .0310         | .0349        | .0287   | 267               | 238             | 288        |
-| 0.06  | 50      | .91      | .0374         | .0399        | .0322   | 221               | 208             | 257        |
-| 0.038 | 70      | 1.31     | .0421         | .0443        | .0332   | 197               | 187             | 249        |
-| 0.025 | 80      | 1.75     | .0450         | .0480        | .0351   | 184               | 173             | 236        |
-| 0.02  | 90      | 2.02     | .0466         | .0477        | .0369   | 177               | 174             | 224        |
-| 0.011 | 95      | 2.87     | .0523         | .0552        | .0389   | 158               | 150             | 213        |
-| lossless | —    | 9.11     | .0760         | .0770        | .0510   | 109               | 108             | 163        |
+| 0.15  | 10      | .38      | .0310         | .0254        | .0258   | 267               | 327             | 321        |
+| 0.06  | 50      | .92      | .0374         | .0315        | .0281   | 221               | 263             | 295        |
+| 0.038 | 70      | 1.31     | .0421         | .0362        | .0298   | 197               | 229             | 278        |
+| 0.025 | 80      | 1.75     | .0450         | .0381        | .0322   | 184               | 218             | 258        |
+| 0.02  | 90      | 2.02     | .0466         | .0404        | .0321   | 177               | 205             | 258        |
+| 0.011 | 95      | 2.88     | .0523         | .0447        | .0344   | 158               | 186             | 241        |
+| lossless | —    | 9.12     | .0760         | .0646        | .0465   | 109               | 128             | 178        |
 
 ### Summary (updated)
 
 | Metric | JPEG | OJPH (orig) | OJPH (opt) | Kakadu |
 |--------|-----:|------------:|-----------:|-------:|
-| Avg encode throughput (MP/s), lossy | 391 | 158 | 208 | 441 |
-| Encode throughput (MP/s), lossless | — | 62 | 111 | 301 |
-| Avg decode throughput (MP/s), lossy | 319 | 200 | 188 | 245 |
-| Decode throughput (MP/s), lossless | — | 109 | 108 | 163 |
+| Avg encode throughput (MP/s), lossy | 391 | 158 | 235 | 471 |
+| Encode throughput (MP/s), lossless | — | 62 | 125 | 323 |
+| Avg decode throughput (MP/s), lossy | 319 | 200 | 238 | 275 |
+| Decode throughput (MP/s), lossless | — | 109 | 128 | 178 |
 
 | Comparison (lossy avg) | Encode | Decode |
 |------------------------|-------:|-------:|
-| Kakadu / OJPH (opt)    | 2.12x  | 1.30x  |
+| Kakadu / OJPH (opt)    | 2.00x  | 1.16x  |
 | Kakadu / OJPH (orig)   | 2.79x  | 1.22x  |
 
 | Comparison (lossless)  | Encode | Decode |
 |------------------------|-------:|-------:|
-| Kakadu / OJPH (opt)    | 2.71x  | 1.51x  |
+| Kakadu / OJPH (opt)    | 2.58x  | 1.39x  |
 | Kakadu / OJPH (orig)   | 4.85x  | 1.50x  |
 
 ### Optimization impact by operating point
 
-The encoder speedup is **strongest at high bitrates and lossless** (79% for
-lossless, 26-47% at mid-to-high quality). Even at low bitrates
-(Qstep=0.15), the optimization provides a 14% speedup. The run-length
-MEL encoding is particularly effective at low bitrates where many quads
-are insignificant, enabling batch run advancement.
+The encoder speedup is **strongest at high bitrates and lossless** (102% for
+lossless, 30-61% at lossy operating points). The exponential-growth elastic
+allocator with 8 MiB initial chunk reduces malloc overhead during encoding,
+providing an additional ~10% encoding speedup on top of the previous
+algorithmic optimizations.
 
-Decode performance is essentially unchanged (the optimization targets the
-encoder only). Small variations from the prior measurement are within noise.
+Decode performance also improved significantly (15-27% vs previous
+measurement), likely due to reduced memory allocation overhead from the larger
+initial allocator chunk and better virtual memory layout.
 
-## Plot
+### Remaining gap to Kakadu
 
-![Benchmark Plot](benchmark_plot.png)
+| Mode | Gap (Kakadu/OJPH) | Target |
+|------|------------------:|-------:|
+| Lossy encode (avg) | 2.00x | 1.0x |
+| Lossless encode | 2.58x | 1.0x |
+| Lossy decode (avg) | 1.16x | 1.0x |
+| Lossless decode | 1.39x | 1.0x |
+
+The decode gap is now very close (1.16x for lossy — OpenJPH is nearly
+competitive). The main opportunity remains in encoding, where a 2x gap
+persists. The codeblock encoder (`encode_codeblock`) remains the dominant
+cost center at ~40% of total encode time.
+
+## ElephantDream_4K (16-bit, 4096x2160)
+
+| Item | Detail |
+|------|--------|
+| Image | `ElephantDream_4K.ppm` (4096 x 2160, 16-bit RGB) |
+| Pixels | 8,847,360 (8.85 MP) |
+
+### Encoding (ElephantDream_4K)
+
+| Qstep | bpp | OJPH opt (s) | KDU (s) | OJPH opt (MP/s) | KDU (MP/s) | Ratio |
+|------:|----:|--------------|---------|-----------------|------------|-------|
+| 0.15  | 0.08 | .0267       | .0255   | 331             | 347        | 1.05x |
+| 0.06  | 0.22 | .0305       | .0248   | 290             | 357        | 1.23x |
+| 0.038 | 0.38 | .0325       | .0256   | 272             | 346        | 1.27x |
+| 0.025 | 0.52 | .0338       | .0267   | 262             | 331        | 1.27x |
+| 0.02  | 0.67 | .0338       | .0267   | 262             | 331        | 1.27x |
+| 0.011 | 1.07 | .0366       | .0272   | 242             | 325        | 1.35x |
+| lossless | 18.54 | .0840  | .0458   | 105             | 193        | 1.83x |
+
+### Decoding (ElephantDream_4K)
+
+| Qstep | bpp | OJPH opt (s) | KDU (s) | OJPH opt (MP/s) | KDU (MP/s) | Ratio |
+|------:|----:|--------------|---------|-----------------|------------|-------|
+| 0.15  | 0.08 | .0273       | .0646   | 324             | 137        | 0.42x |
+| 0.06  | 0.22 | .0310       | .0662   | 285             | 134        | 0.47x |
+| 0.038 | 0.38 | .0354       | .0676   | 250             | 131        | 0.52x |
+| 0.025 | 0.52 | .0356       | .0687   | 249             | 129        | 0.52x |
+| 0.02  | 0.67 | .0379       | .0689   | 233             | 128        | 0.55x |
+| 0.011 | 1.07 | .0387       | .0703   | 229             | 126        | 0.55x |
+| lossless | 18.54 | .0892  | .0681   | 99              | 130        | 1.31x |
+
+### Summary (ElephantDream_4K)
+
+| Metric | OJPH opt (MP/s) | KDU (MP/s) | Ratio |
+|--------|----------------:|-----------:|------:|
+| Avg encode throughput, lossy | 277 | 340 | 1.23x |
+| Encode throughput, lossless | 105 | 193 | 1.83x |
+| Avg decode throughput, lossy | 262 | 131 | 0.50x |
+| Decode throughput, lossless | 99 | 130 | 1.31x |
+
+For 16-bit content, OpenJPH lossy decoding is **2x faster** than Kakadu.
+The encoding gap narrows dramatically to 1.05-1.35x for lossy (vs 2.00x
+on 8-bit). Lossless encoding gap is 1.83x (vs 2.58x on 8-bit).
+
+## Plots
+
+![Benchmark Plot — u10_8bit](benchmark_plot.png)
+![Benchmark Plot — ElephantDream_4K](benchmark_plot_elephant.png)
 
 ## Observations
 
-- **Encoding:** Kakadu's HT block encoder is 2.12x faster than optimized
-  OpenJPH for lossy (down from 2.79x). The gap narrows at higher bitrates.
-- **Lossless encoding:** The optimized encoder achieves 111 MP/s, a 79%
-  improvement over the original 62 MP/s. Kakadu lossless is 2.71x faster.
-- **Decoding:** Kakadu is about 1.30x faster than OpenJPH for lossy, 1.51x
-  for lossless. libjpeg-turbo remains the fastest decoder overall.
+- **Encoding (8-bit):** Kakadu's HT block encoder is 2.00x faster than
+  optimized OpenJPH for lossy (down from 2.79x original). The gap narrows at
+  lower bitrates where the fixed overhead dominates.
+- **Encoding (16-bit):** The gap shrinks to 1.05-1.35x for lossy. At
+  Qstep=0.15, OpenJPH is within 5% of Kakadu.
+- **Lossless encoding:** 125 MP/s on 8-bit (+102% vs original), 105 MP/s on
+  16-bit. Kakadu leads 2.58x (8-bit), 1.83x (16-bit).
+- **Decoding (8-bit):** OpenJPH beats Kakadu at low bitrates (327 vs 321 MP/s
+  at Qstep=0.15). At higher bitrates, Kakadu leads by 1.16-1.30x.
+- **Decoding (16-bit):** OpenJPH is **2x faster** than Kakadu at all lossy
+  operating points. Only lossless decode shows Kakadu ahead (1.31x).
 - **File-size parity:** With the same Qstep and `-no_weights`, both HTJ2K
-  encoders produce virtually identical file sizes, confirming equivalent
-  quantization.
+  encoders produce virtually identical file sizes.

@@ -42,6 +42,7 @@ option(OJPH_BUILD_TESTS "Enables building test code" OFF)
 option(OJPH_BUILD_EXECUTABLES "Enables building command line executables" ON)
 option(OJPH_BUILD_STREAM_EXPAND "Enables building ojph_stream_expand executable" OFF)
 option(OJPH_BUILD_FUZZER "Enables building oss-fuzzing target executable" OFF)
+option(OJPH_ENABLE_ENCODE_TIMINGS "Enable internal encoder stage timing logs" OFF)
 
 option(OJPH_DISABLE_SIMD "Disables the use of SIMD instructions -- agnostic to architectures" OFF)
 option(OJPH_DISABLE_SSE "Disables the use of SSE SIMD instructions and associated files" OFF)
@@ -179,6 +180,10 @@ else()
   endif()
 endif()
 
+if (OJPH_ENABLE_ENCODE_TIMINGS)
+  add_compile_definitions(OJPH_ENABLE_ENCODE_TIMINGS)
+endif()
+
 ## Build library and applications
 include(GNUInstallDirs)
 add_subdirectory(src/core)
@@ -247,4 +252,3 @@ endif()
 if(OJPH_BUILD_FUZZER)
   add_subdirectory(fuzzing)
 endif()
-

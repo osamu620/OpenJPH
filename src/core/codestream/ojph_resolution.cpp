@@ -48,6 +48,7 @@
 #include "ojph_tile.h"
 #include "ojph_subband.h"
 #include "ojph_precinct.h"
+#include "ojph_encode_timing_local.h"
 
 #include "../transform/ojph_transform.h"
 
@@ -546,6 +547,8 @@ namespace ojph {
     //////////////////////////////////////////////////////////////////////////
     void resolution::push_line()
     {
+      scoped_encode_timer timer(encode_timing_add_resolution_push_ns);
+
       if (res_num == 0)
       {
         assert(child_res == NULL);
