@@ -438,68 +438,17 @@ namespace ojph {
     vlc_drain(vlc_struct_avx512* vlcp)
     {
       while (vlcp->used_bits >= 8) {
-        if (unlikely(vlcp->last_greater_than_8F)) {
-          ui8 lo7 = vlcp->tmp & 0x7F;
-          if (unlikely(lo7 == 0x7F)) {
-            *(vlcp->buf - vlcp->pos++) = 0x7F;
-            vlcp->tmp >>= 7;
-            vlcp->used_bits -= 7;
-            vlcp->last_greater_than_8F = false;
-          } else {
-            ui8 byte = vlcp->tmp & 0xFF;
-            *(vlcp->buf - vlcp->pos++) = byte;
-            vlcp->tmp >>= 8;
-            vlcp->used_bits -= 8;
-            vlcp->last_greater_than_8F = byte > 0x8F;
-          }
-          continue;
-        }
+        int escape = (int)vlcp->last_greater_than_8F;
+        int is_7f = (int)((vlcp->tmp & 0x7F) == 0x7F);
+        int need_stuff = escape & is_7f;
+        int bits = 8 - need_stuff;
 
-        int n_bytes = vlcp->used_bits >> 3;
-        if (n_bytes > 8) n_bytes = 8;
-
-        ui64 word = vlcp->tmp;
-        ui64 valid_mask = (n_bytes < 8)
-                        ? (1ULL << (n_bytes * 8)) - 1 : ~(ui64)0;
-
-        ui64 high_bits = word & 0x8080808080808080ULL & valid_mask;
-
-        if (likely(high_bits == 0)) {
-          ui8 *dst = vlcp->buf - vlcp->pos;
-          if (n_bytes >= 8) {
-            ui64 rev = ojph_bswap64(word);
-            memcpy(dst - 7, &rev, 8);
-            vlcp->tmp = 0;
-          } else if (n_bytes >= 4) {
-            ui32 rev = ojph_bswap32((ui32)word);
-            memcpy(dst - 3, &rev, 4);
-            for (int i = 4; i < n_bytes; ++i)
-              dst[-i] = (ui8)(word >> (i * 8));
-            vlcp->tmp >>= (n_bytes * 8);
-          } else {
-            for (int i = 0; i < n_bytes; ++i)
-              dst[-i] = (ui8)(word >> (i * 8));
-            vlcp->tmp >>= (n_bytes * 8);
-          }
-          vlcp->pos += (ui32)n_bytes;
-          vlcp->used_bits -= n_bytes * 8;
-        } else {
-          int safe = (int)(count_trailing_zeros(high_bits) >> 3);
-          ui8 *dst = vlcp->buf - vlcp->pos;
-          for (int i = 0; i < safe; ++i)
-            dst[-i] = (ui8)(word >> (i * 8));
-          ui8 byte = (ui8)(word >> (safe * 8));
-          dst[-safe] = byte;
-          int consumed = safe + 1;
-          vlcp->pos += (ui32)consumed;
-          int bits = consumed * 8;
-          if (bits < 64)
-            vlcp->tmp >>= bits;
-          else
-            vlcp->tmp = 0;
-          vlcp->used_bits -= bits;
-          vlcp->last_greater_than_8F = byte > 0x8F;
-        }
+        ui8 byte = (ui8)(vlcp->tmp & ((1u << bits) - 1));
+        *(vlcp->buf - vlcp->pos) = byte;
+        vlcp->pos++;
+        vlcp->tmp >>= bits;
+        vlcp->used_bits -= bits;
+        vlcp->last_greater_than_8F = byte > 0x8F;
       }
     }
 
