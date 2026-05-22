@@ -342,12 +342,12 @@ namespace ojph {
       }
     }
 
+    static const int mel_exp[13] = {0,0,0,1,1,1,2,2,2,3,3,4,5};
+
     //////////////////////////////////////////////////////////////////////////
     static inline void
     mel_encode(mel_struct* melp, bool bit)
     {
-      static const int mel_exp[13] = {0,0,0,1,1,1,2,2,2,3,3,4,5};
-
       if (bit == false) {
         ++melp->run;
         if (melp->run >= melp->threshold) {
@@ -363,6 +363,37 @@ namespace ojph {
         melp->k = ojph_max(0, melp->k - 1);
         melp->threshold = 1 << mel_exp[melp->k];
       }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    static inline void
+    mel_advance_run(mel_struct* melp, ui32 n)
+    {
+      ui32 remaining = n;
+      while (remaining > 0) {
+        ui32 space = (ui32)melp->threshold - (ui32)melp->run;
+        if (remaining >= space) {
+          remaining -= space;
+          mel_emit_bits(melp, 1, 1);
+          melp->run = 0;
+          melp->k = ojph_min(12, melp->k + 1);
+          melp->threshold = 1 << mel_exp[melp->k];
+        } else {
+          melp->run += (int)remaining;
+          remaining = 0;
+        }
+      }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    static inline void
+    mel_encode_significance(mel_struct* melp)
+    {
+      int t = mel_exp[melp->k];
+      mel_emit_bits(melp, melp->run & ((1u << t) - 1), t + 1);
+      melp->run = 0;
+      melp->k = ojph_max(0, melp->k - 1);
+      melp->threshold = 1 << mel_exp[melp->k];
     }
 
     /////////////////////////////////////////////////////////////////////////
@@ -1068,24 +1099,38 @@ static void proc_mel_encode1(mel_struct *melp, __m512i &cq_vec,
       mel_need_encode2 & (ui16)_mm512_cmpgt_epi32_mask(tmp, ZERO);
 
     ui32 i_max = 16 - (ignore / 2);
+    ui16 valid = (ui16)((1u << i_max) - 1);
+    ui16 me = mel_need_encode & valid;
+    ui16 me2 = mel_need_encode2 & valid;
 
-    for (ui32 i = 0; i < i_max; i += 2) {
-        auto mask = 1 << i;
-        if (0 != (mel_need_encode & mask)) {
-            mel_encode(melp, mel_bit & mask);
-        }
+    ui32 en = _pext_u32(me, 0x5555u);
+    ui32 on = _pext_u32(me, 0xAAAAu);
+    ui32 pn = _pext_u32(me2, 0x5555u);
+    ui32 combined_need = _pdep_u32(en, 0x249249u)
+                       | _pdep_u32(on, 0x492492u)
+                       | _pdep_u32(pn, 0x924924u);
 
-        if (i + 1 < i_max) {
-            auto mask = 1 << (i + 1);
-            if (0 != (mel_need_encode & mask)) {
-                mel_encode(melp, mel_bit & mask);
-            }
-        }
+    ui32 eb = _pext_u32(mel_bit, 0x5555u);
+    ui32 ob = _pext_u32(mel_bit, 0xAAAAu);
+    ui32 pb = _pext_u32(mel_bit2, 0x5555u);
+    ui32 combined_bit = _pdep_u32(eb, 0x249249u)
+                      | _pdep_u32(ob, 0x492492u)
+                      | _pdep_u32(pb, 0x924924u);
 
-        if (0 != (mel_need_encode2 & mask)) {
-            mel_encode(melp, mel_bit2 & mask);
-        }
+    ui32 active = combined_need;
+    ui32 sig = active & combined_bit;
+
+    while (sig) {
+        ui32 first = (ui32)__builtin_ctz(sig);
+        ui32 run_len = (ui32)__builtin_popcount(
+            active & ((1u << first) - 1));
+        mel_advance_run(melp, run_len);
+        mel_encode_significance(melp);
+        active &= ~((1u << (first + 1)) - 1);
+        sig &= sig - 1;
     }
+    if (active)
+        mel_advance_run(melp, (ui32)__builtin_popcount(active));
 }
 
 static void proc_mel_encode2(mel_struct *melp, __m512i &cq_vec,
@@ -1095,21 +1140,25 @@ static void proc_mel_encode2(mel_struct *melp, __m512i &cq_vec,
     ojph_unused(u_q_vec);
     ojph_unused(right_shift);
 
-    /* Prepare mel_encode params */
-    /* if (c_q[i] == 0) { */
     auto mel_need_encode = _mm512_cmpeq_epi32_mask(cq_vec, ZERO);
-    /*   mel_encode(&mel, rho[i] != 0); */
     auto mel_bit = _mm512_cmpneq_epi32_mask(rho_vec, ZERO);
-    /* } */
 
     ui32 i_max = 16 - (ignore / 2);
+    ui16 valid = (ui16)((1u << i_max) - 1);
+    ui16 active = mel_need_encode & valid;
+    ui16 sig = active & mel_bit;
 
-    for (ui32 i = 0; i < i_max; ++i) {
-        auto mask = 1 << i;
-        if (0 != (mel_need_encode & mask)) {
-            mel_encode(melp, mel_bit & mask);
-        }
+    while (sig) {
+        ui32 first = (ui32)__builtin_ctz(sig);
+        ui32 run_len = (ui32)__builtin_popcount(
+            active & (ui16)((1u << first) - 1));
+        mel_advance_run(melp, run_len);
+        mel_encode_significance(melp);
+        active &= ~(ui16)((1u << (first + 1)) - 1);
+        sig &= sig - 1;
     }
+    if (active)
+        mel_advance_run(melp, (ui32)__builtin_popcount(active));
 }
 
 
