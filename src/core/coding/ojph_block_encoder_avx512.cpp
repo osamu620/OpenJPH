@@ -51,9 +51,14 @@
 #ifdef OJPH_COMPILER_MSVC
   #define likely(x)       (x)
   #define unlikely(x)     (x)
+  #include <stdlib.h>
+  #define ojph_bswap64(x) _byteswap_uint64(x)
+  #define ojph_bswap32(x) _byteswap_ulong(x)
 #else
   #define likely(x)       __builtin_expect((x), 1)
   #define unlikely(x)     __builtin_expect((x), 0)
+  #define ojph_bswap64(x) __builtin_bswap64(x)
+  #define ojph_bswap32(x) __builtin_bswap32(x)
 #endif
 
 #if !defined(OJPH_COMPILER_MSVC) && !defined(OJPH_DISABLE_NASM)
@@ -422,11 +427,11 @@ namespace ojph {
         if (likely(high_bits == 0)) {
           ui8 *dst = vlcp->buf - vlcp->pos;
           if (n_bytes >= 8) {
-            ui64 rev = __builtin_bswap64(word);
+            ui64 rev = ojph_bswap64(word);
             memcpy(dst - 7, &rev, 8);
             vlcp->tmp = 0;
           } else if (n_bytes >= 4) {
-            ui32 rev = __builtin_bswap32((ui32)word);
+            ui32 rev = ojph_bswap32((ui32)word);
             memcpy(dst - 3, &rev, 4);
             for (int i = 4; i < n_bytes; ++i)
               dst[-i] = (ui8)(word >> (i * 8));
