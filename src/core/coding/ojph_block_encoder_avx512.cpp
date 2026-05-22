@@ -76,6 +76,8 @@ namespace ojph {
     static ui32 vlc_tbl1[2048];
 
     //UVLC encoding
+    static ui32 uvlc_tbl_pair1[33 * 33];
+    static ui32 uvlc_tbl_pair2[33 * 33];
     static ui32 ulvc_cwd_pre[33];
     static int ulvc_cwd_pre_len[33];
     static ui32 ulvc_cwd_suf[33];
@@ -226,6 +228,56 @@ namespace ojph {
     }
 
     /////////////////////////////////////////////////////////////////////////
+    static void uvlc_init_pair_tables()
+    {
+      for (int uq0 = 0; uq0 < 33; ++uq0) {
+        for (int uq1 = 0; uq1 < 33; ++uq1) {
+          ui32 cwd; int len;
+
+          cwd = 0; len = 0;
+          if (uq0 > 2 && uq1 > 2) {
+            cwd |= ulvc_cwd_pre[uq0 - 2];
+            len += ulvc_cwd_pre_len[uq0 - 2];
+            cwd |= ulvc_cwd_pre[uq1 - 2] << len;
+            len += ulvc_cwd_pre_len[uq1 - 2];
+            cwd |= ulvc_cwd_suf[uq0 - 2] << len;
+            len += ulvc_cwd_suf_len[uq0 - 2];
+            cwd |= ulvc_cwd_suf[uq1 - 2] << len;
+            len += ulvc_cwd_suf_len[uq1 - 2];
+          } else if (uq0 > 2 && uq1 > 0) {
+            cwd |= ulvc_cwd_pre[uq0];
+            len += ulvc_cwd_pre_len[uq0];
+            cwd |= (ui32)(uq1 - 1) << len;
+            len += 1;
+            cwd |= ulvc_cwd_suf[uq0] << len;
+            len += ulvc_cwd_suf_len[uq0];
+          } else {
+            cwd |= ulvc_cwd_pre[uq0];
+            len += ulvc_cwd_pre_len[uq0];
+            cwd |= ulvc_cwd_pre[uq1] << len;
+            len += ulvc_cwd_pre_len[uq1];
+            cwd |= ulvc_cwd_suf[uq0] << len;
+            len += ulvc_cwd_suf_len[uq0];
+            cwd |= ulvc_cwd_suf[uq1] << len;
+            len += ulvc_cwd_suf_len[uq1];
+          }
+          uvlc_tbl_pair1[uq0 * 33 + uq1] = (cwd << 5) | (ui32)len;
+
+          cwd = 0; len = 0;
+          cwd |= ulvc_cwd_pre[uq0];
+          len += ulvc_cwd_pre_len[uq0];
+          cwd |= ulvc_cwd_pre[uq1] << len;
+          len += ulvc_cwd_pre_len[uq1];
+          cwd |= ulvc_cwd_suf[uq0] << len;
+          len += ulvc_cwd_suf_len[uq0];
+          cwd |= ulvc_cwd_suf[uq1] << len;
+          len += ulvc_cwd_suf_len[uq1];
+          uvlc_tbl_pair2[uq0 * 33 + uq1] = (cwd << 5) | (ui32)len;
+        }
+      }
+    }
+
+    /////////////////////////////////////////////////////////////////////////
     bool initialize_block_encoder_tables_avx512() {
       static bool tables_initialized = false;
       static std::once_flag tables_initialized_flag;
@@ -234,6 +286,7 @@ namespace ojph {
         memset(vlc_tbl1, 0, 2048 * sizeof(ui32));
         tables_initialized = vlc_init_tables();
         tables_initialized = tables_initialized && uvlc_init_tables();
+        uvlc_init_pair_tables();
       });
       return tables_initialized;
     }
@@ -1069,32 +1122,9 @@ build_vlc_uvlc_pair1(ui32 *tuple, ui32 *u_q, ui32 i, ui32 i_max,
         size += tuple[i + 1] & 7;
     }
 
-    if (u_q[i] > 2 && u_q[i + 1] > 2) {
-        val |= (ui64)(ulvc_cwd_pre[u_q[i] - 2]) << size;
-        size += ulvc_cwd_pre_len[u_q[i] - 2];
-        val |= (ui64)(ulvc_cwd_pre[u_q[i + 1] - 2]) << size;
-        size += ulvc_cwd_pre_len[u_q[i + 1] - 2];
-        val |= (ui64)(ulvc_cwd_suf[u_q[i] - 2]) << size;
-        size += ulvc_cwd_suf_len[u_q[i] - 2];
-        val |= (ui64)(ulvc_cwd_suf[u_q[i + 1] - 2]) << size;
-        size += ulvc_cwd_suf_len[u_q[i + 1] - 2];
-    } else if (u_q[i] > 2 && u_q[i + 1] > 0) {
-        val |= (ui64)(ulvc_cwd_pre[u_q[i]]) << size;
-        size += ulvc_cwd_pre_len[u_q[i]];
-        val |= (ui64)(u_q[i + 1] - 1) << size;
-        size += 1;
-        val |= (ui64)(ulvc_cwd_suf[u_q[i]]) << size;
-        size += ulvc_cwd_suf_len[u_q[i]];
-    } else {
-        val |= (ui64)(ulvc_cwd_pre[u_q[i]]) << size;
-        size += ulvc_cwd_pre_len[u_q[i]];
-        val |= (ui64)(ulvc_cwd_pre[u_q[i + 1]]) << size;
-        size += ulvc_cwd_pre_len[u_q[i + 1]];
-        val |= (ui64)(ulvc_cwd_suf[u_q[i]]) << size;
-        size += ulvc_cwd_suf_len[u_q[i]];
-        val |= (ui64)(ulvc_cwd_suf[u_q[i + 1]]) << size;
-        size += ulvc_cwd_suf_len[u_q[i + 1]];
-    }
+    ui32 entry = uvlc_tbl_pair1[u_q[i] * 33 + u_q[i + 1]];
+    val |= (ui64)(entry >> 5) << size;
+    size += entry & 0x1F;
 }
 
 static void proc_vlc_encode1(vlc_struct_avx512 *vlcp, ui32 *tuple,
@@ -1129,14 +1159,9 @@ build_vlc_uvlc_pair2(ui32 *tuple, ui32 *u_q, ui32 i, ui32 i_max,
         size += tuple[i + 1] & 7;
     }
 
-    val |= (ui64)ulvc_cwd_pre[u_q[i]] << size;
-    size += ulvc_cwd_pre_len[u_q[i]];
-    val |= (ui64)(ulvc_cwd_pre[u_q[i + 1]]) << size;
-    size += ulvc_cwd_pre_len[u_q[i + 1]];
-    val |= (ui64)(ulvc_cwd_suf[u_q[i + 0]]) << size;
-    size += ulvc_cwd_suf_len[u_q[i + 0]];
-    val |= (ui64)(ulvc_cwd_suf[u_q[i + 1]]) << size;
-    size += ulvc_cwd_suf_len[u_q[i + 1]];
+    ui32 entry = uvlc_tbl_pair2[u_q[i] * 33 + u_q[i + 1]];
+    val |= (ui64)(entry >> 5) << size;
+    size += entry & 0x1F;
 }
 
 static void proc_vlc_encode2(vlc_struct_avx512 *vlcp, ui32 *tuple,
