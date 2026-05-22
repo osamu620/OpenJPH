@@ -23,8 +23,8 @@ ojph_enc_ms  = [35.8, 47.1, 52.1, 59.3, 61.9, 72.4]
 kdu_enc_ms   = [16.6, 18.3, 19.2, 20.3, 20.8, 22.6]
 
 # Optimized OpenJPH encoding (internal Elapsed time)
-ojph_opt_enc_mps = [254, 222, 197, 186, 177, 155]
-ojph_opt_enc_ms  = [32.6, 37.3, 42.2, 44.6, 46.8, 53.5]
+ojph_opt_enc_mps = [254, 220, 207, 190, 183, 160]
+ojph_opt_enc_ms  = [32.6, 37.7, 40.1, 43.7, 45.3, 51.7]
 
 # Original decoding throughput (MP/s)
 jpeg_dec_mps  = [416, 370, 337, 312, 261, 219]
@@ -43,10 +43,10 @@ ojph_opt_dec_ms  = [34.9, 39.9, 44.3, 48.0, 47.7, 55.2]
 # Lossless data points
 ll_bpp = 9.11
 ojph_ll_enc_orig_mps = 62
-ojph_ll_enc_opt_mps = 107
+ojph_ll_enc_opt_mps = 112
 kdu_ll_enc_mps = 301
 ojph_ll_enc_orig_ms = 133.6
-ojph_ll_enc_opt_ms = 77.2
+ojph_ll_enc_opt_ms = 74.1
 kdu_ll_enc_ms = 27.5
 ojph_ll_dec_orig_mps = 109
 ojph_ll_dec_opt_mps = 108
@@ -81,7 +81,7 @@ ax.plot(kdu_bpp, kdu_enc_mps, '^-', color=C_KDU, label='HTJ2K (Kakadu)', ms=ms, 
 ax.plot(ll_bpp, ojph_ll_enc_orig_mps, 's', color=C_OJPH, ms=ms+2)
 ax.plot(ll_bpp, ojph_ll_enc_opt_mps, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
 ax.plot(ll_bpp, kdu_ll_enc_mps, '^', color=C_KDU, ms=ms+2)
-ax.annotate('+73%', xy=(ll_bpp, ojph_ll_enc_opt_mps),
+ax.annotate('+81%', xy=(ll_bpp, ojph_ll_enc_opt_mps),
             xytext=(ll_bpp - 1.5, ojph_ll_enc_opt_mps + 20),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
@@ -117,7 +117,7 @@ ax.plot(kdu_bpp, kdu_enc_ms, '^-', color=C_KDU, label='HTJ2K (Kakadu)', ms=ms, l
 ax.plot(ll_bpp, ojph_ll_enc_orig_ms, 's', color=C_OJPH, ms=ms+2)
 ax.plot(ll_bpp, ojph_ll_enc_opt_ms, 's', color=C_OJPH_OPT, ms=ms+2, markerfacecolor='none', markeredgewidth=2)
 ax.plot(ll_bpp, kdu_ll_enc_ms, '^', color=C_KDU, ms=ms+2)
-ax.annotate('+73%', xy=(ll_bpp, ojph_ll_enc_opt_ms),
+ax.annotate('+81%', xy=(ll_bpp, ojph_ll_enc_opt_ms),
             xytext=(ll_bpp - 1.8, ojph_ll_enc_opt_ms + 12),
             fontsize=9, fontweight='bold', color=C_OJPH_OPT,
             arrowprops=dict(arrowstyle='->', color=C_OJPH_OPT, lw=1.2))
