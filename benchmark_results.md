@@ -134,15 +134,15 @@ cost center at ~40% of total encode time.
 
 ### Encoding (ElephantDream_4K)
 
-| Qstep | bpp | OJPH opt (s) | KDU (s) | OJPH opt (MP/s) | KDU (MP/s) | Ratio |
-|------:|----:|--------------|---------|-----------------|------------|-------|
-| 0.15  | 0.08 | .0281       | .0238   | 315             | 372        | 1.18x |
-| 0.06  | 0.22 | .0302       | .0255   | 293             | 347        | 1.18x |
-| 0.038 | 0.38 | .0333       | .0261   | 266             | 339        | 1.27x |
-| 0.025 | 0.52 | .0336       | .0268   | 263             | 330        | 1.25x |
-| 0.02  | 0.67 | .0352       | .0266   | 251             | 333        | 1.32x |
-| 0.011 | 1.07 | .0379       | .0275   | 233             | 322        | 1.38x |
-| lossless | 18.54 | .0849  | .0458   | 104             | 193        | 1.85x |
+| Qstep | bpp | OJPH orig (s) | OJPH opt (s) | KDU (s) | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU (MP/s) | Speedup |
+|------:|----:|--------------:|-------------:|--------:|-----------------:|----------------:|-----------:|--------:|
+| 0.15  | 0.08 | .0273       | .0281        | .0238   | 324              | 315             | 372        | -3%     |
+| 0.06  | 0.22 | .0320       | .0302        | .0255   | 276              | 293             | 347        | +6%     |
+| 0.038 | 0.38 | .0383       | .0333        | .0261   | 231              | 266             | 339        | +15%    |
+| 0.025 | 0.52 | .0388       | .0336        | .0268   | 228              | 263             | 330        | +15%    |
+| 0.02  | 0.67 | .0421       | .0352        | .0266   | 210              | 251             | 333        | +20%    |
+| 0.011 | 1.07 | .0459       | .0379        | .0275   | 193              | 233             | 322        | +21%    |
+| lossless | 18.54 | .1442  | .0849        | .0458   | 61               | 104             | 193        | +70%    |
 
 ### Decoding (ElephantDream_4K)
 
@@ -151,32 +151,33 @@ expensive (~0.035 s overhead). The table shows both the PPM time and
 the raw decode time (output to `.rawl`, no PPM byte-swap/write).
 OpenJPH's `Elapsed time` also includes PPM writing.
 
-| Qstep | bpp | OJPH (s) | KDU PPM (s) | KDU raw (s) | OJPH (MP/s) | KDU raw (MP/s) | Ratio |
-|------:|----:|---------:|------------:|------------:|------------:|---------------:|------:|
-| 0.15  | 0.08 | .0272  | .0638       | .0312       | 325         | 284            | 0.87x |
-| 0.06  | 0.22 | .0326  | .0671       | .0328       | 271         | 270            | 1.00x |
-| 0.038 | 0.38 | .0349  | .0684       | .0344       | 254         | 257            | 1.01x |
-| 0.025 | 0.52 | .0371  | .0692       | .0356       | 238         | 249            | 1.04x |
-| 0.02  | 0.67 | .0378  | .0696       | .0357       | 234         | 248            | 1.06x |
-| 0.011 | 1.07 | .0401  | .0705       | .0371       | 221         | 238            | 1.08x |
-| lossless | 18.54 | .0893 | .0681    | .0543       | 99          | 163            | 1.64x |
+| Qstep | bpp | OJPH orig (s) | OJPH opt (s) | KDU PPM (s) | KDU raw (s) | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU raw (MP/s) | Ratio |
+|------:|----:|--------------:|-------------:|------------:|------------:|-----------------:|----------------:|---------------:|------:|
+| 0.15  | 0.08 | .0280       | .0272        | .0638       | .0312       | 316              | 325             | 284            | 0.87x |
+| 0.06  | 0.22 | .0335       | .0326        | .0671       | .0328       | 264              | 271             | 270            | 1.00x |
+| 0.038 | 0.38 | .0359       | .0349        | .0684       | .0344       | 246              | 254             | 257            | 1.01x |
+| 0.025 | 0.52 | .0377       | .0371        | .0692       | .0356       | 235              | 238             | 249            | 1.04x |
+| 0.02  | 0.67 | .0386       | .0378        | .0696       | .0357       | 229              | 234             | 248            | 1.06x |
+| 0.011 | 1.07 | .0409       | .0401        | .0705       | .0371       | 216              | 221             | 238            | 1.08x |
+| lossless | 18.54 | .0953  | .0893        | .0681       | .0543       | 93               | 99              | 163            | 1.64x |
 
-Note: the "Ratio" column compares OJPH (incl. PPM write) against KDU
-raw (no PPM write), so it slightly favours Kakadu. At low bitrates
+Note: the "Ratio" column compares OJPH opt (incl. PPM write) against
+KDU raw (no PPM write), so it slightly favours Kakadu. At low bitrates
 OJPH is faster even with the PPM write overhead included.
 
 ### Summary (ElephantDream_4K)
 
-| Metric | OJPH opt (MP/s) | KDU (MP/s) | Ratio |
-|--------|----------------:|-----------:|------:|
-| Avg encode throughput, lossy | 270 | 340 | 1.26x |
-| Encode throughput, lossless | 104 | 193 | 1.85x |
-| Avg decode throughput, lossy (KDU raw) | 257 | 258 | ~1.0x |
-| Decode throughput, lossless (KDU raw) | 99 | 163 | 1.64x |
+| Metric | OJPH orig (MP/s) | OJPH opt (MP/s) | KDU (MP/s) | Ratio (KDU/opt) |
+|--------|------------------:|----------------:|-----------:|----------------:|
+| Avg encode throughput, lossy | 244 | 270 | 340 | 1.26x |
+| Encode throughput, lossless | 61 | 104 | 193 | 1.85x |
+| Avg decode throughput, lossy (KDU raw) | 251 | 257 | 258 | ~1.0x |
+| Decode throughput, lossless (KDU raw) | 93 | 99 | 163 | 1.64x |
 
 The encoding gap narrows to 1.18-1.38x for lossy on 16-bit (vs 2.00x
-on 8-bit). Lossy decode is roughly equal when comparing fairly (OJPH
-incl. PPM vs KDU raw). Lossless encode/decode gaps are 1.85x/1.64x.
+on 8-bit). Lossless encoding improved 70% (61→104 MP/s). Lossy decode
+is roughly equal when comparing fairly (OJPH incl. PPM vs KDU raw).
+Lossless encode/decode gaps are 1.85x/1.64x.
 
 ## Plots
 
