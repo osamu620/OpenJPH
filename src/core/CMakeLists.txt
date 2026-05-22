@@ -76,12 +76,17 @@ else()
 
         # NASM assembly for MagSgn encoder (x86-64, non-MSVC only)
         if (NOT MSVC AND "${OJPH_TARGET_ARCH}" MATCHES "OJPH_ARCH_X86_64")
-          enable_language(ASM_NASM)
-          set(CODING_ASM coding/ojph_block_encoder_avx512.asm)
-          set_source_files_properties(${CODING_ASM} PROPERTIES
-            LANGUAGE ASM_NASM)
-          list(APPEND SOURCES ${CODING_ASM})
-          source_group("coding" FILES ${CODING_ASM})
+          find_program(NASM_EXECUTABLE nasm)
+          if (NASM_EXECUTABLE)
+            enable_language(ASM_NASM)
+            set(CODING_ASM coding/ojph_block_encoder_avx512.asm)
+            set_source_files_properties(${CODING_ASM} PROPERTIES
+              LANGUAGE ASM_NASM)
+            list(APPEND SOURCES ${CODING_ASM})
+            source_group("coding" FILES ${CODING_ASM})
+          else()
+            add_compile_definitions(OJPH_DISABLE_NASM)
+          endif()
         endif()
       endif()
 
