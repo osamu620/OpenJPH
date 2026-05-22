@@ -73,6 +73,16 @@ else()
         list(APPEND SOURCES ${CODING_AVX512} ${TRANSFORM_AVX512})
         source_group("coding" FILES ${CODING_AVX512})
         source_group("transform" FILES ${TRANSFORM_AVX512})
+
+        # NASM assembly for MagSgn encoder (x86-64, non-MSVC only)
+        if (NOT MSVC AND "${OJPH_TARGET_ARCH}" MATCHES "OJPH_ARCH_X86_64")
+          enable_language(ASM_NASM)
+          set(CODING_ASM coding/ojph_block_encoder_avx512.asm)
+          set_source_files_properties(${CODING_ASM} PROPERTIES
+            LANGUAGE ASM_NASM)
+          list(APPEND SOURCES ${CODING_ASM})
+          source_group("coding" FILES ${CODING_ASM})
+        endif()
       endif()
 
       # Set compilation flags

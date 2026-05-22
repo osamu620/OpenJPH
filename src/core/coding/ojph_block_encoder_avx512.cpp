@@ -56,6 +56,11 @@
   #define unlikely(x)     __builtin_expect((x), 0)
 #endif
 
+#if !defined(OJPH_COMPILER_MSVC) && !defined(OJPH_DISABLE_NASM)
+extern "C" void ojph_ms_encode_batch(void *msp,
+    const ojph::ui32 *cwd, const int *cwd_len);
+#endif
+
 namespace ojph {
   namespace local {
 
@@ -334,53 +339,91 @@ namespace ojph {
 
     //////////////////////////////////////////////////////////////////////////
     static inline void
-    vlc_drain_byte(vlc_struct_avx512* vlcp)
+    vlc_drain(vlc_struct_avx512* vlcp)
     {
-      ui8 tmp;
-      if (unlikely(vlcp->last_greater_than_8F)) {
-          tmp = vlcp->tmp & 0x7F;
-          if (likely(tmp != 0x7F)) {
-              tmp = vlcp->tmp & 0xFF;
-              *(vlcp->buf - vlcp->pos) = tmp;
-              vlcp->last_greater_than_8F = tmp > 0x8F;
-              vlcp->tmp >>= 8;
-              vlcp->used_bits -= 8;
+      while (vlcp->used_bits >= 8) {
+        if (unlikely(vlcp->last_greater_than_8F)) {
+          ui8 lo7 = vlcp->tmp & 0x7F;
+          if (unlikely(lo7 == 0x7F)) {
+            *(vlcp->buf - vlcp->pos++) = 0x7F;
+            vlcp->tmp >>= 7;
+            vlcp->used_bits -= 7;
+            vlcp->last_greater_than_8F = false;
           } else {
-              *(vlcp->buf - vlcp->pos) = tmp;
-              vlcp->last_greater_than_8F = false;
-              vlcp->tmp >>= 7;
-              vlcp->used_bits -= 7;
+            ui8 byte = vlcp->tmp & 0xFF;
+            *(vlcp->buf - vlcp->pos++) = byte;
+            vlcp->tmp >>= 8;
+            vlcp->used_bits -= 8;
+            vlcp->last_greater_than_8F = byte > 0x8F;
           }
-      } else {
-          tmp = vlcp->tmp & 0xFF;
-          *(vlcp->buf - vlcp->pos) = tmp;
-          vlcp->last_greater_than_8F = tmp > 0x8F;
-          vlcp->tmp >>= 8;
-          vlcp->used_bits -= 8;
+          continue;
+        }
+
+        int n_bytes = vlcp->used_bits >> 3;
+        if (n_bytes > 8) n_bytes = 8;
+
+        ui64 word = vlcp->tmp;
+        ui64 valid_mask = (n_bytes < 8)
+                        ? (1ULL << (n_bytes * 8)) - 1 : ~(ui64)0;
+
+        ui64 high_bits = word & 0x8080808080808080ULL & valid_mask;
+
+        if (likely(high_bits == 0)) {
+          ui8 *dst = vlcp->buf - vlcp->pos;
+          if (n_bytes >= 8) {
+            ui64 rev = __builtin_bswap64(word);
+            memcpy(dst - 7, &rev, 8);
+            vlcp->tmp = 0;
+          } else if (n_bytes >= 4) {
+            ui32 rev = __builtin_bswap32((ui32)word);
+            memcpy(dst - 3, &rev, 4);
+            for (int i = 4; i < n_bytes; ++i)
+              dst[-i] = (ui8)(word >> (i * 8));
+            vlcp->tmp >>= (n_bytes * 8);
+          } else {
+            for (int i = 0; i < n_bytes; ++i)
+              dst[-i] = (ui8)(word >> (i * 8));
+            vlcp->tmp >>= (n_bytes * 8);
+          }
+          vlcp->pos += (ui32)n_bytes;
+          vlcp->used_bits -= n_bytes * 8;
+        } else {
+          int safe = (int)(count_trailing_zeros(high_bits) >> 3);
+          ui8 *dst = vlcp->buf - vlcp->pos;
+          for (int i = 0; i < safe; ++i)
+            dst[-i] = (ui8)(word >> (i * 8));
+          ui8 byte = (ui8)(word >> (safe * 8));
+          dst[-safe] = byte;
+          int consumed = safe + 1;
+          vlcp->pos += (ui32)consumed;
+          int bits = consumed * 8;
+          if (bits < 64)
+            vlcp->tmp >>= bits;
+          else
+            vlcp->tmp = 0;
+          vlcp->used_bits -= bits;
+          vlcp->last_greater_than_8F = byte > 0x8F;
+        }
       }
-      vlcp->pos++;
     }
 
+    //////////////////////////////////////////////////////////////////////////
     static inline void
     vlc_encode(vlc_struct_avx512* vlcp, ui64 cwd, int cwd_len)
     {
-      int avail = 64 - vlcp->used_bits;
-      if (likely(cwd_len <= avail)) {
-        vlcp->tmp |= cwd << vlcp->used_bits;
-        vlcp->used_bits += cwd_len;
-      } else {
+      while (true) {
+        int avail = 64 - vlcp->used_bits;
+        if (likely(cwd_len <= avail)) {
+          vlcp->tmp |= cwd << vlcp->used_bits;
+          vlcp->used_bits += cwd_len;
+          return;
+        }
         vlcp->tmp |= (cwd & ((1ULL << avail) - 1)) << vlcp->used_bits;
         vlcp->used_bits = 64;
-        while (vlcp->used_bits >= 8)
-          vlc_drain_byte(vlcp);
+        vlc_drain(vlcp);
         cwd >>= avail;
         cwd_len -= avail;
-        vlcp->tmp |= cwd << vlcp->used_bits;
-        vlcp->used_bits += cwd_len;
       }
-
-      while (vlcp->used_bits >= 8)
-        vlc_drain_byte(vlcp);
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -775,16 +818,25 @@ static void proc_ms_encode(ms_struct *msp,
      */
     rotate_matrix(s_vec);
 
+#if !defined(OJPH_COMPILER_MSVC) && !defined(OJPH_DISABLE_NASM)
+    ui32 cwd[64];
+    int cwd_len[64];
+
+    for (ui32 i = 0; i < 4; ++i) {
+        _mm512_storeu_si512(&cwd_len[i * 16], m_vec[i]);
+        tmp = _mm512_sllv_epi32(ONE, m_vec[i]);
+        tmp = _mm512_sub_epi32(tmp, ONE);
+        tmp = _mm512_and_epi32(tmp, s_vec[i]);
+        _mm512_storeu_si512(&cwd[i * 16], tmp);
+    }
+    ojph_ms_encode_batch(msp, cwd, cwd_len);
+#else
     ui32 cwd[16];
     int cwd_len[16];
     ui64 _cwd = 0;
     int _cwd_len = 0;
 
-    /* Each iteration process 8 bytes * 2 lines */
     for (ui32 i = 0; i < 4; ++i) {
-        /* cwd = s[i * 4 + 0] & ((1U << m) - 1)
-         * cwd_len = m
-         */
         _mm512_storeu_si512(cwd_len, m_vec[i]);
         tmp = _mm512_sllv_epi32(ONE, m_vec[i]);
         tmp = _mm512_sub_epi32(tmp, ONE);
@@ -817,6 +869,7 @@ static void proc_ms_encode(ms_struct *msp,
         }
     }
     ms_drain(msp);
+#endif
 }
 
 static __m512i cal_eps_vec(__m512i *eq_vec, __m512i &u_q_vec,
@@ -1296,6 +1349,7 @@ void ojph_encode_codeblock_avx512(ui32* buf, ui32 missing_msbs,
     }
 
     ms_terminate(&ms);
+    vlc_drain(&vlc);
     terminate_mel_vlc(&mel, &vlc);
 
     //copy to elastic
