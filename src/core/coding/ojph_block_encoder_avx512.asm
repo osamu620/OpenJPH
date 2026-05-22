@@ -139,7 +139,7 @@ ojph_ms_encode_batch:
     mov    rbx, rax
     mov    [rsp + STK_CWDLEN], ecx
     mov    [rsp + STK_AVAIL], r9d
-    call   .drain
+    call   ojph_ms_drain_internal
     mov    rax, rbx
     mov    ecx, [rsp + STK_CWDLEN]
     mov    r9d, [rsp + STK_AVAIL]
@@ -172,7 +172,7 @@ ojph_ms_encode_batch:
     mov    rbx, rax
     mov    [rsp + STK_CWDLEN], ecx
     mov    [rsp + STK_AVAIL], r9d
-    call   .drain
+    call   ojph_ms_drain_internal
     mov    rax, rbx
     mov    ecx, [rsp + STK_CWDLEN]
     mov    r9d, [rsp + STK_AVAIL]
@@ -193,7 +193,7 @@ ojph_ms_encode_batch:
 ; Final drain + epilogue
 ; =================================================================
 .final_drain:
-    call   .drain
+    call   ojph_ms_drain_internal
 
     ; Write state back to ms_struct
     mov    [r15 + MS_TMP], r14
@@ -216,6 +216,9 @@ ojph_ms_encode_batch:
 ; =================================================================
 ; ms_drain: drain complete bytes from the accumulator to the buffer.
 ;
+; Shared by ojph_ms_encode_batch and ojph_ms_encode_pairs.
+; Both callers use the same register convention and stack layout.
+;
 ; Modifies: r14 (tmp), r13 (used_bits|flags), ebp (pos)
 ; Clobbers: rax, rcx, r8, r9, r10, r11
 ; Preserves: rbx, rsi, rdx, rdi, r12, r15
@@ -224,6 +227,7 @@ ojph_ms_encode_batch:
 ;   [rsp + STK_0101_D] = 0x0101010101010101
 ;   [rsp + STK_8080_D] = 0x8080808080808080
 ; =================================================================
+ojph_ms_drain_internal:
 .drain:
     test   r13d, 0x100
     jnz    .drain_after_ff
@@ -326,3 +330,157 @@ ojph_ms_encode_batch:
     sub    r13b, 7
     and    r13d, 0xFF
     jmp    .drain_loop
+
+; =================================================================
+; MagSgn pair encoder
+;
+; Processes 32 pre-combined pairs (ui64 cwd, int cwd_len) produced
+; by SIMD pair-wise combining in proc_ms_encode.  Processes 16
+; groups of 2 pairs, combining each group with one shift+OR.
+;
+; void ojph_ms_encode_pairs(void *msp,
+;     const ui64 *cwd, const int *cwd_len);
+;
+; System V ABI: rdi=msp, rsi=cwd (32 x ui64), rdx=cwd_len (32 x int)
+;
+; Register allocation: same as ojph_ms_encode_batch
+; =================================================================
+
+global ojph_ms_encode_pairs
+
+ojph_ms_encode_pairs:
+    push   rbx
+    push   rbp
+    push   r12
+    push   r13
+    push   r14
+    push   r15
+    sub    rsp, 32
+
+    mov    rax, 0x0101010101010101
+    mov    [rsp + STK_0101], rax
+    mov    rax, 0x8080808080808080
+    mov    [rsp + STK_8080], rax
+
+    ; Load ms_struct state into registers
+    mov    r15, rdi
+    mov    r12, [rdi + MS_BUF]
+    mov    ebp, [rdi + MS_POS]
+    mov    r14, [rdi + MS_TMP]
+    mov    eax, [rdi + MS_USED_BITS]
+    movzx  r13d, byte [rdi + MS_LAST_FF]
+    shl    r13d, 8
+    or     r13d, eax
+
+    lea    rdi, [rsi + 256]          ; end = cwd + 32 (32 x 8 = 256 bytes)
+
+; =================================================================
+; Main loop: 16 groups of 2 pre-combined pairs
+; =================================================================
+.p_group_loop:
+    ; Load 2 pre-combined pairs (64-bit each)
+    mov    rax, [rsi]                ; cwd[0] (ui64)
+    mov    r8, [rsi + 8]             ; cwd[1] (ui64)
+
+    ; Load lengths and compute total
+    mov    ecx, [rdx]                ; cwd_len[0]
+    mov    r11d, [rdx + 4]           ; cwd_len[1]
+    add    r11d, ecx                 ; total = cwd_len[0] + cwd_len[1]
+
+    ; Try to combine both pairs
+    cmp    r11d, 64
+    jg     .p_split
+
+    ; Fast path: combine and encode
+    shlx   r8, r8, rcx
+    or     rax, r8
+    mov    ecx, r11d
+
+.p_encode:
+    movzx  r8d, r13b
+    mov    r9d, 64
+    sub    r9d, r8d
+    cmp    ecx, r9d
+    jg     .p_encode_overflow
+    shlx   rax, rax, r8
+    or     r14, rax
+    add    r13b, cl
+
+.p_next_group:
+    add    rsi, 16
+    add    rdx, 8
+    cmp    rsi, rdi
+    jb     .p_group_loop
+    jmp    .p_final_drain
+
+.p_encode_overflow:
+    bzhi   r10, rax, r9
+    shlx   r10, r10, r8
+    or     r14, r10
+    mov    r13b, 64
+    mov    rbx, rax
+    mov    [rsp + STK_CWDLEN], ecx
+    mov    [rsp + STK_AVAIL], r9d
+    call   ojph_ms_drain_internal
+    mov    rax, rbx
+    mov    ecx, [rsp + STK_CWDLEN]
+    mov    r9d, [rsp + STK_AVAIL]
+    shrx   rax, rax, r9
+    sub    ecx, r9d
+    jmp    .p_encode
+
+; Split path: encode each pair separately
+.p_split:
+    mov    ecx, [rdx]                ; cwd_len[0]
+.p_split_encode_p0:
+    movzx  r8d, r13b
+    mov    r9d, 64
+    sub    r9d, r8d
+    cmp    ecx, r9d
+    jg     .p_split_p0_overflow
+    shlx   rax, rax, r8
+    or     r14, rax
+    add    r13b, cl
+    jmp    .p_split_pair1
+
+.p_split_p0_overflow:
+    bzhi   r10, rax, r9
+    shlx   r10, r10, r8
+    or     r14, r10
+    mov    r13b, 64
+    mov    rbx, rax
+    mov    [rsp + STK_CWDLEN], ecx
+    mov    [rsp + STK_AVAIL], r9d
+    call   ojph_ms_drain_internal
+    mov    rax, rbx
+    mov    ecx, [rsp + STK_CWDLEN]
+    mov    r9d, [rsp + STK_AVAIL]
+    shrx   rax, rax, r9
+    sub    ecx, r9d
+    jmp    .p_split_encode_p0
+
+.p_split_pair1:
+    mov    rax, [rsi + 8]
+    mov    ecx, [rdx + 4]
+    jmp    .p_encode
+
+.p_final_drain:
+    call   ojph_ms_drain_internal
+
+    ; Write state back to ms_struct
+    mov    [r15 + MS_TMP], r14
+    movzx  eax, r13b
+    mov    [r15 + MS_USED_BITS], eax
+    mov    [r15 + MS_POS], ebp
+    bt     r13d, 8
+    setc   al
+    mov    [r15 + MS_LAST_FF], al
+
+    add    rsp, 32
+    pop    r15
+    pop    r14
+    pop    r13
+    pop    r12
+    pop    rbp
+    pop    rbx
+    ret

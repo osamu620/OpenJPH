@@ -73,6 +73,8 @@
 #if !defined(OJPH_COMPILER_MSVC) && !defined(OJPH_DISABLE_NASM)
 extern "C" void ojph_ms_encode_batch(void *msp,
     const ojph::ui32 *cwd, const int *cwd_len);
+extern "C" void ojph_ms_encode_pairs(void *msp,
+    const ojph::ui64 *cwd, const int *cwd_len);
 #endif
 
 namespace ojph {
@@ -864,17 +866,41 @@ static void proc_ms_encode(ms_struct *msp,
     rotate_matrix(s_vec);
 
 #if !defined(OJPH_COMPILER_MSVC) && !defined(OJPH_DISABLE_NASM)
-    ui32 cwd[64];
-    int cwd_len[64];
+    ui64 pcwd[32];
+    int plen[32];
+
+    const __m512i gather_even = _mm512_set_epi32(
+        0, 0, 0, 0, 0, 0, 0, 0, 14, 12, 10, 8, 6, 4, 2, 0);
+    const __m512i gather_odd = _mm512_set_epi32(
+        0, 0, 0, 0, 0, 0, 0, 0, 15, 13, 11, 9, 7, 5, 3, 1);
 
     for (ui32 i = 0; i < 4; ++i) {
-        _mm512_storeu_si512(&cwd_len[i * 16], m_vec[i]);
         tmp = _mm512_sllv_epi32(ONE, m_vec[i]);
         tmp = _mm512_sub_epi32(tmp, ONE);
         tmp = _mm512_and_epi32(tmp, s_vec[i]);
-        _mm512_storeu_si512(&cwd[i * 16], tmp);
+
+        __m256i ecwd256 = _mm512_castsi512_si256(
+            _mm512_permutexvar_epi32(gather_even, tmp));
+        __m256i ocwd256 = _mm512_castsi512_si256(
+            _mm512_permutexvar_epi32(gather_odd, tmp));
+        __m256i elen256 = _mm512_castsi512_si256(
+            _mm512_permutexvar_epi32(gather_even, m_vec[i]));
+        __m256i olen256 = _mm512_castsi512_si256(
+            _mm512_permutexvar_epi32(gather_odd, m_vec[i]));
+
+        __m512i ecwd = _mm512_cvtepu32_epi64(ecwd256);
+        __m512i ocwd = _mm512_cvtepu32_epi64(ocwd256);
+        __m512i elen = _mm512_cvtepu32_epi64(elen256);
+
+        __m512i combined = _mm512_or_epi64(ecwd,
+                                           _mm512_sllv_epi64(ocwd, elen));
+
+        __m256i clen256 = _mm256_add_epi32(elen256, olen256);
+
+        _mm512_storeu_si512(&pcwd[i * 8], combined);
+        _mm256_storeu_si256((__m256i *)&plen[i * 8], clen256);
     }
-    ojph_ms_encode_batch(msp, cwd, cwd_len);
+    ojph_ms_encode_pairs(msp, pcwd, plen);
 #else
     ui32 cwd[16];
     int cwd_len[16];
