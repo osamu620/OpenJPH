@@ -1147,16 +1147,14 @@ static void proc_mel_encode2(mel_struct *melp, __m512i &cq_vec,
 
 
 static inline void
-build_vlc_uvlc_pair1(ui32 *tuple, ui32 *u_q, ui32 i, ui32 i_max,
+build_vlc_uvlc_pair1(ui32 *tuple, ui32 *u_q, ui32 i,
                      ui64 &val, int &size)
 {
     val = tuple[i + 0] >> 4;
     size = tuple[i + 0] & 7;
 
-    if (i + 1 < i_max) {
-        val |= (ui64)(tuple[i + 1] >> 4) << size;
-        size += tuple[i + 1] & 7;
-    }
+    val |= (ui64)(tuple[i + 1] >> 4) << size;
+    size += tuple[i + 1] & 7;
 
     ui32 entry = uvlc_tbl_pair1[u_q[i] * 33 + u_q[i + 1]];
     val |= (ui64)(entry >> 5) << size;
@@ -1171,29 +1169,27 @@ static void proc_vlc_encode1(vlc_struct_avx512 *vlcp, ui32 *tuple,
     ui32 i = 0;
     for (; i + 2 < i_max; i += 4) {
         ui64 val1; int size1;
-        build_vlc_uvlc_pair1(tuple, u_q, i, i_max, val1, size1);
+        build_vlc_uvlc_pair1(tuple, u_q, i, val1, size1);
         ui64 val2; int size2;
-        build_vlc_uvlc_pair1(tuple, u_q, i + 2, i_max, val2, size2);
+        build_vlc_uvlc_pair1(tuple, u_q, i + 2, val2, size2);
         vlc_encode(vlcp, val1 | (val2 << size1), size1 + size2);
     }
     if (i < i_max) {
         ui64 val; int size;
-        build_vlc_uvlc_pair1(tuple, u_q, i, i_max, val, size);
+        build_vlc_uvlc_pair1(tuple, u_q, i, val, size);
         vlc_encode(vlcp, val, size);
     }
 }
 
 static inline void
-build_vlc_uvlc_pair2(ui32 *tuple, ui32 *u_q, ui32 i, ui32 i_max,
+build_vlc_uvlc_pair2(ui32 *tuple, ui32 *u_q, ui32 i,
                      ui64 &val, int &size)
 {
     val = tuple[i + 0] >> 4;
     size = tuple[i + 0] & 7;
 
-    if (i + 1 < i_max) {
-        val |= (ui64)(tuple[i + 1] >> 4) << size;
-        size += tuple[i + 1] & 7;
-    }
+    val |= (ui64)(tuple[i + 1] >> 4) << size;
+    size += tuple[i + 1] & 7;
 
     ui32 entry = uvlc_tbl_pair2[u_q[i] * 33 + u_q[i + 1]];
     val |= (ui64)(entry >> 5) << size;
@@ -1208,14 +1204,14 @@ static void proc_vlc_encode2(vlc_struct_avx512 *vlcp, ui32 *tuple,
     ui32 i = 0;
     for (; i + 2 < i_max; i += 4) {
         ui64 val1; int size1;
-        build_vlc_uvlc_pair2(tuple, u_q, i, i_max, val1, size1);
+        build_vlc_uvlc_pair2(tuple, u_q, i, val1, size1);
         ui64 val2; int size2;
-        build_vlc_uvlc_pair2(tuple, u_q, i + 2, i_max, val2, size2);
+        build_vlc_uvlc_pair2(tuple, u_q, i + 2, val2, size2);
         vlc_encode(vlcp, val1 | (val2 << size1), size1 + size2);
     }
     if (i < i_max) {
         ui64 val; int size;
-        build_vlc_uvlc_pair2(tuple, u_q, i, i_max, val, size);
+        build_vlc_uvlc_pair2(tuple, u_q, i, val, size);
         vlc_encode(vlcp, val, size);
     }
 }
@@ -1304,11 +1300,14 @@ static inline void encode_x_loop(
 
         proc_ms_encode(&ms, tuple_vec, uq_vec, rho_vec, s_vec);
 
-        ui32 u_q[16];
-        ui32 tuple[16];
+        ui32 u_q[18];
+        ui32 tuple[18];
         tuple_vec = _mm512_srli_epi32(tuple_vec, 4);
         _mm512_storeu_si512(tuple, tuple_vec);
         _mm512_storeu_si512(u_q, u_q_vec);
+        ui32 i_max = 16 - (_ignore / 2);
+        if (i_max & 1) { tuple[i_max] = 0; u_q[i_max] = 0; }
+        tuple[16] = 0; u_q[16] = 0;
         if (PASS == 1)
             proc_vlc_encode1(&vlc, tuple, u_q, _ignore);
         else
