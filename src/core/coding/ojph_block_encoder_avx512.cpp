@@ -439,6 +439,46 @@ namespace ojph {
     static inline void
     vlc_drain(vlc_struct_avx512* vlcp)
     {
+      // SWAR fast path: bulk-write 8 bytes when no stuffing is possible.
+      // Stuffing requires (prev_byte > 0x8F) AND (cur_byte & 0x7F == 0x7F).
+      // The second condition means cur_byte is 0x7F or 0xFF (2/256 values).
+      // If no byte in the 64-bit word has lo7 == 0x7F, stuffing is impossible.
+      if (vlcp->used_bits >= 64) {
+        ui64 word = vlcp->tmp;
+        ui64 lo7 = word & 0x7F7F7F7F7F7F7F7FULL;
+        // lo7 bytes are in [0x00,0x7F]; only 0x7F+0x01=0x80 sets bit 7
+        ui64 has_7f = (lo7 + 0x0101010101010101ULL) & 0x8080808080808080ULL;
+
+        if (likely(has_7f == 0)) {
+          ui64 reversed = __builtin_bswap64(word);
+          memcpy(vlcp->buf - vlcp->pos - 7, &reversed, 8);
+          vlcp->pos += 8;
+          vlcp->tmp = 0;
+          vlcp->used_bits -= 64;
+          vlcp->last_greater_than_8F = (ui8)(word >> 56) > 0x8F;
+          return;
+        }
+
+        // ~6%: a 0x7F/0xFF byte exists but stuffing also needs the
+        // preceding byte > 0x8F. Check the first such byte.
+        int first = __builtin_ctzll(has_7f) >> 3;
+        bool pred_gt_8f = (first == 0)
+          ? vlcp->last_greater_than_8F
+          : ((ui8)(word >> ((first - 1) * 8))) > 0x8F;
+        if (likely(!pred_gt_8f)) {
+          ui64 remaining = has_7f & (has_7f - 1);
+          if (likely(remaining == 0 || first == 7)) {
+            ui64 reversed = __builtin_bswap64(word);
+            memcpy(vlcp->buf - vlcp->pos - 7, &reversed, 8);
+            vlcp->pos += 8;
+            vlcp->tmp = 0;
+            vlcp->used_bits -= 64;
+            vlcp->last_greater_than_8F = (ui8)(word >> 56) > 0x8F;
+            return;
+          }
+        }
+      }
+
       while (vlcp->used_bits >= 8) {
         int escape = (int)vlcp->last_greater_than_8F;
         int is_7f = (int)((vlcp->tmp & 0x7F) == 0x7F);
