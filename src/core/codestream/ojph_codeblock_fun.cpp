@@ -238,6 +238,7 @@ namespace ojph {
 
       #if (defined(OJPH_ARCH_X86_64) && !defined(OJPH_DISABLE_AVX512))
         if (get_cpu_ext_level() >= X86_CPU_EXT_LEVEL_AVX512) {
+          decode_cb32 = ojph_decode_codeblock_avx512;
           encode_cb32 = ojph_encode_codeblock_avx512;
           bool result = initialize_block_encoder_tables_avx512();
           assert(result); ojph_unused(result);

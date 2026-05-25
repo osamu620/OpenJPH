@@ -143,8 +143,12 @@ namespace ojph {
                           osxsave_avail && ((xcr_val & 0xE0) == 0xE0);
                         bool avx512f_avail = (avx2_abcd[1] & 0x10000) != 0;
                         bool avx512cd_avail = (avx2_abcd[1] & 0x10000000) != 0;
-                        bool avx512_avail = 
-                          zmm_avail && avx512f_avail && avx512cd_avail;
+                        bool avx512bw_avail = (avx2_abcd[1] & 0x40000000) != 0;
+                        bool avx512vl_avail =
+                          (avx2_abcd[1] & 0x80000000u) != 0;
+                        bool avx512_avail = zmm_avail && avx512f_avail
+                          && avx512cd_avail && avx512bw_avail
+                          && avx512vl_avail;
                         if (avx512_avail)
                           level = X86_CPU_EXT_LEVEL_AVX512;
                       }
