@@ -815,13 +815,30 @@ namespace ojph {
 
             __m128i ms_vec0 = _mm_setzero_si128();
             __m128i ms_vec1 = _mm_setzero_si128();
-            if (total_mn1) {
-                ms_vec0 = frwd_fetch<0xFF>(magsgn);
-                frwd_advance(magsgn, (ui32)total_mn1);
+            ui32 total_mn = (ui32)(total_mn1 + total_mn2);
+            if (total_mn1 > 0 && total_mn2 > 0
+                && total_mn1 < 64 && total_mn < 128)
+            {
+                __m128i ms_all = frwd_fetch<0xFF>(magsgn);
+                ms_vec0 = ms_all;
+                __m128i sh = _mm_set1_epi64x(total_mn1);
+                ms_vec1 = _mm_srl_epi64(ms_all, sh);
+                __m128i cross = _mm_srli_si128(ms_all, 8);
+                cross = _mm_sll_epi64(cross,
+                            _mm_set1_epi64x(64 - total_mn1));
+                ms_vec1 = _mm_or_si128(ms_vec1, cross);
+                frwd_advance(magsgn, total_mn);
             }
-            if (total_mn2) {
-                ms_vec1 = frwd_fetch<0xFF>(magsgn);
-                frwd_advance(magsgn, (ui32)total_mn2);
+            else
+            {
+                if (total_mn1) {
+                    ms_vec0 = frwd_fetch<0xFF>(magsgn);
+                    frwd_advance(magsgn, (ui32)total_mn1);
+                }
+                if (total_mn2) {
+                    ms_vec1 = frwd_fetch<0xFF>(magsgn);
+                    frwd_advance(magsgn, (ui32)total_mn2);
+                }
             }
 
             __m256i ms_vec = _mm256_inserti128_si256(_mm256_castsi128_si256(ms_vec0), ms_vec1, 0x1);
@@ -945,13 +962,30 @@ namespace ojph {
 
             __m128i ms_vec0 = _mm_setzero_si128();
             __m128i ms_vec1 = _mm_setzero_si128();
-            if (total_mn1) {
-                ms_vec0 = frwd_fetch<0xFF>(magsgn);
-                frwd_advance(magsgn, (ui32)total_mn1);
+            ui32 total_mn = (ui32)(total_mn1 + total_mn2);
+            if (total_mn1 > 0 && total_mn2 > 0
+                && total_mn1 < 64 && total_mn < 128)
+            {
+                __m128i ms_all = frwd_fetch<0xFF>(magsgn);
+                ms_vec0 = ms_all;
+                __m128i sh = _mm_set1_epi64x(total_mn1);
+                ms_vec1 = _mm_srl_epi64(ms_all, sh);
+                __m128i cross = _mm_srli_si128(ms_all, 8);
+                cross = _mm_sll_epi64(cross,
+                            _mm_set1_epi64x(64 - total_mn1));
+                ms_vec1 = _mm_or_si128(ms_vec1, cross);
+                frwd_advance(magsgn, total_mn);
             }
-            if (total_mn2) {
-                ms_vec1 = frwd_fetch<0xFF>(magsgn);
-                frwd_advance(magsgn, (ui32)total_mn2);
+            else
+            {
+                if (total_mn1) {
+                    ms_vec0 = frwd_fetch<0xFF>(magsgn);
+                    frwd_advance(magsgn, (ui32)total_mn1);
+                }
+                if (total_mn2) {
+                    ms_vec1 = frwd_fetch<0xFF>(magsgn);
+                    frwd_advance(magsgn, (ui32)total_mn2);
+                }
             }
 
             __m256i ms_vec = _mm256_inserti128_si256(_mm256_castsi128_si256(ms_vec0), ms_vec1, 0x1);
