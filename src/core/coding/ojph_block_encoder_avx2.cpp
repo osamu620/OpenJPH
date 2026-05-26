@@ -335,7 +335,7 @@ namespace ojph {
 
     //////////////////////////////////////////////////////////////////////////
     static inline void
-    vlc_encode(vlc_struct_avx2* vlcp, ui32 cwd, int cwd_len)
+    vlc_encode(vlc_struct_avx2* vlcp, ui64 cwd, int cwd_len)
     {
       vlcp->tmp |= (ui64)cwd << vlcp->used_bits;
       vlcp->used_bits += cwd_len;
@@ -445,8 +445,6 @@ namespace ojph {
     {
       while (cwd_len > 0)
       {
-        if (msp->pos >= msp->buf_size)
-          OJPH_ERROR(0x00020005, "magnitude sign encoder's buffer is full");
         int t = ojph_min(msp->max_bits - msp->used_bits, cwd_len);
         msp->tmp |= ((ui32)(cwd & ((1U << t) - 1))) << msp->used_bits;
         msp->used_bits += t;
@@ -694,12 +692,16 @@ static void proc_ms_encode(ms_struct *msp,
         tmp = _mm256_and_si256(tmp, s_vec[i]);
         _mm256_storeu_si256((__m256i*)cwd, tmp);
 
-        for (ui32 j = 0; j < 4; ++j) {
+        for (ui32 j = 0; j < 4; j += 2) {
             ui32 idx = j * 2;
             _cwd     = cwd[idx];
             _cwd_len = cwd_len[idx];
             _cwd     |= ((ui64)cwd[idx + 1]) << _cwd_len;
             _cwd_len += cwd_len[idx + 1];
+            _cwd     |= ((ui64)cwd[idx + 2]) << _cwd_len;
+            _cwd_len += cwd_len[idx + 2];
+            _cwd     |= ((ui64)cwd[idx + 3]) << _cwd_len;
+            _cwd_len += cwd_len[idx + 3];
             ms_encode(msp, _cwd, _cwd_len);
         }
     }
@@ -882,91 +884,88 @@ static void proc_mel_encode2(mel_struct *melp, __m256i &cq_vec,
 {
     ojph_unused(u_q_vec);
     ojph_unused(right_shift);
-    int32_t mel_need_encode[8];
-    int32_t mel_bit[8];
 
-    /* Prepare mel_encode params */
-    /* if (c_q[i] == 0) { */
-    _mm256_storeu_si256((__m256i*)mel_need_encode, _mm256_cmpeq_epi32(cq_vec, ZERO));
-    /*   mel_encode(&mel, rho[i] != 0); */
-    _mm256_storeu_si256((__m256i*)mel_bit, _mm256_srli_epi32(avx2_cmpneq_epi32(rho_vec, ZERO), 31));
-    /* } */
+    __m256i need = _mm256_cmpeq_epi32(cq_vec, ZERO);
+    ui32 mask = (ui32)_mm256_movemask_epi8(need);
+    // each epi32 lane sets 4 bits; keep the MSB of each group (bits 3,7,11,...)
+    mask &= 0x88888888;
 
     ui32 i_max = 8 - (ignore / 2);
+    // mask off ignored quads (bit 3 for quad 0, bit 7 for quad 1, etc.)
+    if (i_max < 8)
+        mask &= (1u << (i_max * 4)) - 1;
 
-    for (ui32 i = 0; i < i_max; ++i) {
-        if (mel_need_encode[i]) {
-            mel_encode(melp, mel_bit[i]);
-        }
+    if (mask == 0)
+        return;
+
+    int32_t mel_bit[8];
+    _mm256_storeu_si256((__m256i*)mel_bit,
+        _mm256_srli_epi32(avx2_cmpneq_epi32(rho_vec, ZERO), 31));
+
+    // bits are at positions 3,7,11,15,19,23,27,31 → divide by 4 for quad index
+    while (mask) {
+        ui32 bit_pos = __builtin_ctz(mask);
+        ui32 i = bit_pos / 4;
+        mel_encode(melp, mel_bit[i]);
+        mask &= mask - 1;
     }
 }
 
 using fn_proc_mel_encode = void (*)(mel_struct *, __m256i &, __m256i &,
                                     __m256i, ui32, const __m256i);
 
+static inline void
+vlc_encode1_one_pair(ui64 &val, int &size, ui32 *tuple, ui32 *u_q,
+                     ui32 i, ui32 i_max)
+{
+    val |= (ui64)(tuple[i + 0] >> 4) << size;
+    size += tuple[i + 0] & 7;
+
+    if (i + 1 < i_max) {
+        val |= (ui64)(tuple[i + 1] >> 4) << size;
+        size += tuple[i + 1] & 7;
+    }
+
+    if (u_q[i] > 2 && u_q[i + 1] > 2) {
+        val |= (ui64)(ulvc_cwd_pre[u_q[i] - 2]) << size;
+        size += ulvc_cwd_pre_len[u_q[i] - 2];
+        val |= (ui64)(ulvc_cwd_pre[u_q[i + 1] - 2]) << size;
+        size += ulvc_cwd_pre_len[u_q[i + 1] - 2];
+        val |= (ui64)(ulvc_cwd_suf[u_q[i] - 2]) << size;
+        size += ulvc_cwd_suf_len[u_q[i] - 2];
+        val |= (ui64)(ulvc_cwd_suf[u_q[i + 1] - 2]) << size;
+        size += ulvc_cwd_suf_len[u_q[i + 1] - 2];
+    } else if (u_q[i] > 2 && u_q[i + 1] > 0) {
+        val |= (ui64)(ulvc_cwd_pre[u_q[i]]) << size;
+        size += ulvc_cwd_pre_len[u_q[i]];
+        val |= (ui64)(u_q[i + 1] - 1) << size;
+        size += 1;
+        val |= (ui64)(ulvc_cwd_suf[u_q[i]]) << size;
+        size += ulvc_cwd_suf_len[u_q[i]];
+    } else {
+        val |= (ui64)(ulvc_cwd_pre[u_q[i]]) << size;
+        size += ulvc_cwd_pre_len[u_q[i]];
+        val |= (ui64)(ulvc_cwd_pre[u_q[i + 1]]) << size;
+        size += ulvc_cwd_pre_len[u_q[i + 1]];
+        val |= (ui64)(ulvc_cwd_suf[u_q[i]]) << size;
+        size += ulvc_cwd_suf_len[u_q[i]];
+        val |= (ui64)(ulvc_cwd_suf[u_q[i + 1]]) << size;
+        size += ulvc_cwd_suf_len[u_q[i + 1]];
+    }
+}
+
 static void proc_vlc_encode1(vlc_struct_avx2 *vlcp, ui32 *tuple,
                              ui32 *u_q, ui32 ignore)
 {
     ui32 i_max = 8 - (ignore / 2);
 
-    for (ui32 i = 0; i < i_max; i += 2) {
-        /* 7 bits */
-        ui32 val = tuple[i + 0] >> 4;
-        int size = tuple[i + 0] & 7;
+    for (ui32 i = 0; i < i_max; i += 4) {
+        ui64 val = 0;
+        int size = 0;
 
-        if (i + 1 < i_max) {
-            /* 7 bits */
-            val |= (tuple[i + 1] >> 4) << size;
-            size += tuple[i + 1] & 7;
-        }
-
-        if (u_q[i] > 2 && u_q[i + 1] > 2) {
-            /* 3 bits */
-            val |= (ulvc_cwd_pre[u_q[i] - 2]) << size;
-            size += ulvc_cwd_pre_len[u_q[i] - 2];
-
-            /* 3 bits */
-            val |= (ulvc_cwd_pre[u_q[i + 1] - 2]) << size;
-            size += ulvc_cwd_pre_len[u_q[i + 1] - 2];
-
-            /* 5 bits */
-            val |= (ulvc_cwd_suf[u_q[i] - 2]) << size;
-            size += ulvc_cwd_suf_len[u_q[i] - 2];
-
-            /* 5 bits */
-            val |= (ulvc_cwd_suf[u_q[i + 1] - 2]) << size;
-            size += ulvc_cwd_suf_len[u_q[i + 1] - 2];
-
-        } else if (u_q[i] > 2 && u_q[i + 1] > 0) {
-            /* 3 bits */
-            val |= (ulvc_cwd_pre[u_q[i]]) << size;
-            size += ulvc_cwd_pre_len[u_q[i]];
-
-            /* 1 bit */
-            val |= (u_q[i + 1] - 1) << size;
-            size += 1;
-
-            /* 5 bits */
-            val |= (ulvc_cwd_suf[u_q[i]]) << size;
-            size += ulvc_cwd_suf_len[u_q[i]];
-
-        } else {
-            /* 3 bits */
-            val |= (ulvc_cwd_pre[u_q[i]]) << size;
-            size += ulvc_cwd_pre_len[u_q[i]];
-
-            /* 3 bits */
-            val |= (ulvc_cwd_pre[u_q[i + 1]]) << size;
-            size += ulvc_cwd_pre_len[u_q[i + 1]];
-
-            /* 5 bits */
-            val |= (ulvc_cwd_suf[u_q[i]]) << size;
-            size += ulvc_cwd_suf_len[u_q[i]];
-
-            /* 5 bits */
-            val |= (ulvc_cwd_suf[u_q[i + 1]]) << size;
-            size += ulvc_cwd_suf_len[u_q[i + 1]];
-        }
+        vlc_encode1_one_pair(val, size, tuple, u_q, i, i_max);
+        if (i + 2 < i_max)
+            vlc_encode1_one_pair(val, size, tuple, u_q, i + 2, i_max);
 
         vlc_encode(vlcp, val, size);
     }
@@ -977,32 +976,31 @@ static void proc_vlc_encode2(vlc_struct_avx2 *vlcp, ui32 *tuple,
 {
     ui32 i_max = 8 - (ignore / 2);
 
-    for (ui32 i = 0; i < i_max; i += 2) {
-        /* 7 bits */
-        ui32 val = tuple[i + 0] >> 4;
-        int size = tuple[i + 0] & 7;
+    for (ui32 i = 0; i < i_max; i += 4) {
+        ui64 val = 0;
+        int size = 0;
 
-        if (i + 1 < i_max) {
-            /* 7 bits */
-            val |= (tuple[i + 1] >> 4) << size;
-            size += tuple[i + 1] & 7;
+        for (ui32 k = i; k < i + 4 && k < i_max; k += 2) {
+            val |= (ui64)(tuple[k + 0] >> 4) << size;
+            size += tuple[k + 0] & 7;
+
+            if (k + 1 < i_max) {
+                val |= (ui64)(tuple[k + 1] >> 4) << size;
+                size += tuple[k + 1] & 7;
+            }
+
+            val |= (ui64)ulvc_cwd_pre[u_q[k]] << size;
+            size += ulvc_cwd_pre_len[u_q[k]];
+
+            val |= (ui64)(ulvc_cwd_pre[u_q[k + 1]]) << size;
+            size += ulvc_cwd_pre_len[u_q[k + 1]];
+
+            val |= (ui64)(ulvc_cwd_suf[u_q[k + 0]]) << size;
+            size += ulvc_cwd_suf_len[u_q[k + 0]];
+
+            val |= (ui64)(ulvc_cwd_suf[u_q[k + 1]]) << size;
+            size += ulvc_cwd_suf_len[u_q[k + 1]];
         }
-
-        /* 3 bits */
-        val |= ulvc_cwd_pre[u_q[i]] << size;
-        size += ulvc_cwd_pre_len[u_q[i]];
-
-        /* 3 bits */
-        val |= (ulvc_cwd_pre[u_q[i + 1]]) << size;
-        size += ulvc_cwd_pre_len[u_q[i + 1]];
-
-        /* 5 bits */
-        val |= (ulvc_cwd_suf[u_q[i + 0]]) << size;
-        size += ulvc_cwd_suf_len[u_q[i + 0]];
-
-        /* 5 bits */
-        val |= (ulvc_cwd_suf[u_q[i + 1]]) << size;
-        size += ulvc_cwd_suf_len[u_q[i + 1]];
 
         vlc_encode(vlcp, val, size);
     }
