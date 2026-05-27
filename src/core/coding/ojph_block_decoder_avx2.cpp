@@ -727,30 +727,20 @@ namespace ojph {
       assert(num_bits > 0 && num_bits <= msp->bits && num_bits < 128);
       msp->bits -= num_bits;
 
-      __m128i *p = (__m128i*)(msp->tmp + ((num_bits >> 3) & 0x18));
+      __m256i *p = (__m256i*)(msp->tmp + ((num_bits >> 3) & 0x18));
       num_bits &= 63;
 
-      __m128i v0, v1, c0, c1, t;
-      v0 = _mm_loadu_si128(p);
-      v1 = _mm_loadu_si128(p + 1);
+      __m256i v = _mm256_loadu_si256(p);
+      __m256i shifted = _mm256_srlv_epi64(v, _mm256_set1_epi64x(num_bits));
 
-      // shift right by num_bits
-      c0 = _mm_srl_epi64(v0, _mm_set1_epi64x(num_bits));
-      t = _mm_srli_si128(v0, 8);
-      t = _mm_sll_epi64(t, _mm_set1_epi64x(64 - num_bits));
-      c0 = _mm_or_si128(c0, t);
-      t = _mm_slli_si128(v1, 8);
-      t = _mm_sll_epi64(t, _mm_set1_epi64x(64 - num_bits));
-      c0 = _mm_or_si128(c0, t);
+      __m256i carry_src = _mm256_permute4x64_epi64(v, 0x39);
+      carry_src = _mm256_blend_epi32(carry_src,
+                                      _mm256_setzero_si256(), 0xC0);
+      __m256i carry = _mm256_sllv_epi64(carry_src,
+                                         _mm256_set1_epi64x(64 - num_bits));
 
-      _mm_storeu_si128((__m128i*)msp->tmp, c0);
-
-      c1 = _mm_srl_epi64(v1, _mm_set1_epi64x(num_bits));
-      t = _mm_srli_si128(v1, 8);
-      t = _mm_sll_epi64(t, _mm_set1_epi64x(64 - num_bits));
-      c1 = _mm_or_si128(c1, t);
-
-      _mm_storeu_si128((__m128i*)msp->tmp + 1, c1);
+      _mm256_storeu_si256((__m256i*)msp->tmp,
+                          _mm256_or_si256(shifted, carry));
     }
 
     //************************************************************************/
@@ -815,13 +805,30 @@ namespace ojph {
 
             __m128i ms_vec0 = _mm_setzero_si128();
             __m128i ms_vec1 = _mm_setzero_si128();
-            if (total_mn1) {
-                ms_vec0 = frwd_fetch<0xFF>(magsgn);
-                frwd_advance(magsgn, (ui32)total_mn1);
+            ui32 total_mn = (ui32)(total_mn1 + total_mn2);
+            if (total_mn1 > 0 && total_mn2 > 0
+                && total_mn1 < 64 && total_mn < 128)
+            {
+                __m128i ms_all = frwd_fetch<0xFF>(magsgn);
+                ms_vec0 = ms_all;
+                __m128i sh = _mm_set1_epi64x(total_mn1);
+                ms_vec1 = _mm_srl_epi64(ms_all, sh);
+                __m128i cross = _mm_srli_si128(ms_all, 8);
+                cross = _mm_sll_epi64(cross,
+                            _mm_set1_epi64x(64 - total_mn1));
+                ms_vec1 = _mm_or_si128(ms_vec1, cross);
+                frwd_advance(magsgn, total_mn);
             }
-            if (total_mn2) {
-                ms_vec1 = frwd_fetch<0xFF>(magsgn);
-                frwd_advance(magsgn, (ui32)total_mn2);
+            else
+            {
+                if (total_mn1) {
+                    ms_vec0 = frwd_fetch<0xFF>(magsgn);
+                    frwd_advance(magsgn, (ui32)total_mn1);
+                }
+                if (total_mn2) {
+                    ms_vec1 = frwd_fetch<0xFF>(magsgn);
+                    frwd_advance(magsgn, (ui32)total_mn2);
+                }
             }
 
             __m256i ms_vec = _mm256_inserti128_si256(_mm256_castsi128_si256(ms_vec0), ms_vec1, 0x1);
@@ -945,13 +952,30 @@ namespace ojph {
 
             __m128i ms_vec0 = _mm_setzero_si128();
             __m128i ms_vec1 = _mm_setzero_si128();
-            if (total_mn1) {
-                ms_vec0 = frwd_fetch<0xFF>(magsgn);
-                frwd_advance(magsgn, (ui32)total_mn1);
+            ui32 total_mn = (ui32)(total_mn1 + total_mn2);
+            if (total_mn1 > 0 && total_mn2 > 0
+                && total_mn1 < 64 && total_mn < 128)
+            {
+                __m128i ms_all = frwd_fetch<0xFF>(magsgn);
+                ms_vec0 = ms_all;
+                __m128i sh = _mm_set1_epi64x(total_mn1);
+                ms_vec1 = _mm_srl_epi64(ms_all, sh);
+                __m128i cross = _mm_srli_si128(ms_all, 8);
+                cross = _mm_sll_epi64(cross,
+                            _mm_set1_epi64x(64 - total_mn1));
+                ms_vec1 = _mm_or_si128(ms_vec1, cross);
+                frwd_advance(magsgn, total_mn);
             }
-            if (total_mn2) {
-                ms_vec1 = frwd_fetch<0xFF>(magsgn);
-                frwd_advance(magsgn, (ui32)total_mn2);
+            else
+            {
+                if (total_mn1) {
+                    ms_vec0 = frwd_fetch<0xFF>(magsgn);
+                    frwd_advance(magsgn, (ui32)total_mn1);
+                }
+                if (total_mn2) {
+                    ms_vec1 = frwd_fetch<0xFF>(magsgn);
+                    frwd_advance(magsgn, (ui32)total_mn2);
+                }
             }
 
             __m256i ms_vec = _mm256_inserti128_si256(_mm256_castsi128_si256(ms_vec0), ms_vec1, 0x1);
@@ -1159,8 +1183,6 @@ namespace ojph {
       // Each entry in UVLC contains u_q
       // One extra row to handle the case of SPP propagating downwards
       // when codeblock width is 4
-      ui16 scratch[8 * 513] = {0};          // 8+ kB
-
       // We need an extra two entries (one inf and one u_q) beyond
       // the last column.
       // If the block width is 4 (2 quads), then we use sstr of 8
@@ -1168,6 +1190,16 @@ namespace ojph {
       // sstr is 16 (enough for 8 quads). For a width of 16 (8
       // quads), we use 24 (enough for 12 quads).
       ui32 sstr = ((width + 2u) + 7u) & ~7u; // multiples of 8
+
+#ifdef __MINGW64__
+      ui16 scratch[8 * 513] = {0};
+#else
+      ui16 scratch[8 * 513];
+      ui32 quad_rows = (height + 1u) >> 1;
+      size_t scratch_zero = (size_t)(quad_rows + 1) * sstr;
+      if (scratch_zero > 8 * 513) scratch_zero = 8 * 513;
+      memset(scratch, 0, scratch_zero * sizeof(ui16));
+#endif
 
       assert((stride & 0x3) == 0);
 
@@ -1392,27 +1424,32 @@ namespace ojph {
             //remove data from vlc stream, if qinf is not used, cwdlen is 0
             vlc_val = rev_advance(&vlc, t1 & 0x7);
 
-            // decode u
+            // decode u using wide UVLC table
             /////////////
-            // uvlc_mode is made up of u_offset bits from the quad pair
-            ui32 uvlc_mode = ((t0 & 0x8U) << 3) | ((t1 & 0x8U) << 4);
-            ui32 uvlc_entry = uvlc_tbl1[uvlc_mode + (vlc_val & 0x3F)];
-            //remove total prefix length
-            vlc_val = rev_advance(&vlc, uvlc_entry & 0x7);
-            uvlc_entry >>= 3;
-            //extract suffixes for quad 0 and 1
-            ui32 len = uvlc_entry & 0xF;           //suffix length for 2 quads
-            ui32 tmp = vlc_val & ((1 << len) - 1); //suffix value for 2 quads
-            vlc_val = rev_advance(&vlc, len);
-            ojph_unused(vlc_val); //static code analysis: unused value
-            uvlc_entry >>= 4;
-            // quad 0 length
-            len = uvlc_entry & 0x7; // quad 0 suffix length
-            uvlc_entry >>= 3;
-            ui16 u_q = (ui16)((uvlc_entry & 7) + (tmp & ~(0xFFU << len)));
-            sp[1] = u_q;
-            u_q = (ui16)((uvlc_entry >> 3) + (tmp >> len)); // u_q
-            sp[3] = u_q;
+            ui32 uvlc_mode = (((t0 >> 3) & 1) | (((t1 >> 3) & 1) << 1));
+            ui32 uvlc_entry =
+              uvlc_tbl1_wide[(uvlc_mode << 10) | (vlc_val & 0x3FF)];
+            ui32 total_bits = uvlc_entry & 0x1F;
+            if (total_bits < 0x1F) {
+              sp[1] = (ui16)((uvlc_entry >> 5) & 0xFF);
+              sp[3] = (ui16)((uvlc_entry >> 13) & 0xFF);
+              vlc_val = rev_advance(&vlc, total_bits);
+              ojph_unused(vlc_val);
+            } else {
+              uvlc_mode = ((t0 & 0x8U) << 3) | ((t1 & 0x8U) << 4);
+              uvlc_entry = uvlc_tbl1[uvlc_mode + (vlc_val & 0x3F)];
+              vlc_val = rev_advance(&vlc, uvlc_entry & 0x7);
+              uvlc_entry >>= 3;
+              ui32 len = uvlc_entry & 0xF;
+              ui32 tmp = vlc_val & ((1 << len) - 1);
+              vlc_val = rev_advance(&vlc, len);
+              ojph_unused(vlc_val);
+              uvlc_entry >>= 4;
+              len = uvlc_entry & 0x7;
+              uvlc_entry >>= 3;
+              sp[1] = (ui16)((uvlc_entry & 7) + (tmp & ~(0xFFU << len)));
+              sp[3] = (ui16)((uvlc_entry >> 3) + (tmp >> len));
+            }
           }
           sp[0] = sp[1] = 0;
         }
@@ -1435,7 +1472,12 @@ namespace ojph {
         // There are two rows in this structure, the bottom
         // row is used to store processed entries.
         const int v_n_size = 512 + 16;
-        ui32 v_n_scratch[2 * v_n_size] = {0}; // 4+ kB
+#ifdef __MINGW64__
+        ui32 v_n_scratch[2 * v_n_size] = {0};
+#else
+        ui32 v_n_scratch[2 * v_n_size];
+        memset(v_n_scratch + (width >> 1) + 2, 0, 14 * sizeof(ui32));
+#endif
 
         frwd_struct_avx2 magsgn;
         frwd_init<0xFF>(&magsgn, coded_data, lcup - scup);
@@ -1550,8 +1592,14 @@ namespace ojph {
         // There are two rows in this structure, the bottom
         // row is used to store processed entries.
         const int v_n_size = 512 + 16;
-        ui16 v_n_scratch[v_n_size] = {0}; // 1+ kB
-        ui32 v_n_scratch_32[v_n_size] = {0}; // 2+ kB
+#ifdef __MINGW64__
+        ui16 v_n_scratch[v_n_size] = {0};
+        ui32 v_n_scratch_32[v_n_size] = {0};
+#else
+        ui16 v_n_scratch[v_n_size];
+        memset(v_n_scratch + (width >> 1) + 4, 0, 8 * sizeof(ui16));
+        ui32 v_n_scratch_32[v_n_size];
+#endif
 
         frwd_struct_avx2 magsgn;
         frwd_init<0xFF>(&magsgn, coded_data, lcup - scup);
