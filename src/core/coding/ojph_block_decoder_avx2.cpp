@@ -774,7 +774,11 @@ namespace ojph {
      *  @param vn       used for handling E values (stores v_n values)
      *  @return __m256i decoded two quads
      */
+#ifdef OJPH_COMPILER_MSVC
+    static __forceinline
+#else
     static inline __attribute__((always_inline))
+#endif
     __m256i decode_two_quad32_avx2(__m256i inf_u_q, __m256i U_q, frwd_struct_avx2* magsgn, ui32 p, __m128i& vn) {
         __m256i row = _mm256_setzero_si256();
 
